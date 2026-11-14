@@ -4,6 +4,7 @@ import { GOODS } from '../data/goods';
 import { BOARD } from '../data/board';
 import type { CellType } from '../data/types';
 import { useGameStore } from './gameStore';
+import { getLevelData } from '../data/progression';
 
 export interface BusinessPlayer {
   id: string; name: string; isBot: boolean; scraps: number; position: number;
@@ -32,33 +33,25 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
   players: [], lots: [], storage: [], turnIndex: 0, phase: 'idle', lastRoll: 0, winnerId: null, turnCount: 0, roundCount: 0,
 
   startMatch: (playerVisas, botCount) => {
+    // Даем всем по 300 обрезков для комфортного старта
     const players: BusinessPlayer[] = [
-      { id: 'player', name: 'Вы', isBot: false, scraps: 100, position: 0, inventory: {}, visas: playerVisas, closedVisas: [], role: null, roleHistory: [] }
+      { id: 'player', name: 'Вы', isBot: false, scraps: 300, position: 0, inventory: {}, visas: playerVisas, closedVisas: [], role: null, roleHistory: [] }
     ];
 
-    // Собираем товары, которые нужны игроку (requires) и которые он производит (produces)
     const playerNeeds = playerVisas.flatMap(v => VISAS[v].requires);
     const playerProduces = playerVisas.map(v => VISAS[v].produces);
-
     const availableForBots = Object.values(VISAS).filter(v => !playerVisas.includes(v.id));
     let selectedBotsVisas: string[] = [];
 
-    // 1. Взаимный обмен (игрок 1v1 или малый пул)
     if (playerVisas.length === 1) {
-        const directLink = availableForBots.find(v => 
-            v.requires.includes(playerProduces[0]) && playerNeeds.includes(v.produces)
-        );
+        const directLink = availableForBots.find(v => v.requires.includes(playerProduces[0]) && playerNeeds.includes(v.produces));
         if (directLink) selectedBotsVisas.push(directLink.id);
     }
 
-    // 2. Заполняем остальных ботов нужными производителями
     while (selectedBotsVisas.length < botCount && availableForBots.length > 0) {
-        // Ищем того, кто производит то, что нужно игроку
         const neededProducer = availableForBots.find(v => playerNeeds.includes(v.produces) && !selectedBotsVisas.includes(v.id));
-        if (neededProducer) {
-            selectedBotsVisas.push(neededProducer.id);
-        } else {
-            // Если таких нет, берем любого, кто не ломает экономику
+        if (neededProducer) selectedBotsVisas.push(neededProducer.id);
+        else {
             const fallback = availableForBots.find(v => !selectedBotsVisas.includes(v.id));
             if (fallback) selectedBotsVisas.push(fallback.id);
         }
@@ -69,8 +62,8 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
       if (!vId) break;
       const botVisa = VISAS[vId];
       players.push({
-        id: `bot_${i}`, name: BOT_NAMES[i % BOT_NAMES.length], isBot: true, scraps: 100, position: 0,
-        inventory: { [botVisa.produces]: 2 }, visas: [vId], closedVisas: [], role: null, roleHistory: [],
+        id: `bot_${i}`, name: BOT_NAMES[i % BOT_NAMES.length], isBot: true, scraps: 300, position: 0,
+        inventory: { [botVisa.produces]: 3 }, visas: [vId], closedVisas: [], role: null, roleHistory: [],
       });
     }
 
@@ -97,9 +90,8 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
         if (newPos === 0 || wrapped) {
           current.scraps += 100;
           if (current.id === 'player') {
-             // Круг завершен (игрок прошел старт). Обновляем склад.
              set({ roundCount: state.roundCount + 1 });
-             get().executeCell(); // Триггерим обновление склада
+             get().executeCell();
           }
         }
 
@@ -112,7 +104,7 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
   executeCell: () => {
     const state = get();
     
-    // Обновление склада каждый круг
+    // Склад появляется после первого круга
     if (state.roundCount > 0 && state.storage.length === 0) {
         const allNeeds = state.players.flatMap(p => p.visas.flatMap(v => VISAS[v].requires));
         const uniqueNeeds = [...new Set(allNeeds)];
@@ -147,28 +139,55 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     } else if (cell === 'market' || cell === 'production') {
       if (current.isBot) {
         if (cell === 'market') {
-          const currentLots = get().lots;
+          const allLots = [...get().lots, ...get().storage];
           let botRole: 'buyer' | 'seller' = Math.random() > 0.5 ? 'buyer' : 'seller';
-          if (current.roleHistory.length >= 2 && current.roleHistory[0] === botRole && current.roleHistory[1] === botRole) botRole = botRole === 'buyer' ? 'seller' : 'buyer';
-          current.role = botRole; current.roleHistory = [current.roleHistory[1] || botRole, botRole];
+          
+          if (current.roleHistory.length >= 2 && current.roleHistory[0] === botRole && current.roleHistory[1] === botRole) 
+            botRole = botRole === 'buyer' ? 'seller' : 'buyer';
+          
+          current.role = botRole; 
+          current.roleHistory = [current.roleHistory[1] || botRole, botRole];
 
           if (botRole === 'seller') {
+            // Бот-продавец выставляет свой товар
             const sellable = Object.entries(current.inventory).find(([_, amt]) => amt > 0);
             if (sellable) {
               const [gId, amt] = sellable;
-              const amount = Math.min(amt, 5);
-              const price = Math.floor(GOODS[gId].basePrice * 1.2 * amount);
+              const amount = Math.min(amt, 5); // Макс 5 в лот
+              const price = Math.floor(GOODS[gId].basePrice * amount); // Продает по базовой цене (100%)
               current.inventory[gId] -= amount;
-              set({ lots: [...currentLots, { id: `lot_${Date.now()}_${Math.random()}`, sellerId: current.id, goodId: gId, amount, price }], players: [...state.players] });
+              set({ lots: [...get().lots, { id: `lot_${Date.now()}_${Math.random()}`, sellerId: current.id, goodId: gId, amount, price }], players: [...state.players] });
             }
           } else {
+            // Бот-покупатель ищет нужный товар
             const needed = current.visas.flatMap(vId => VISAS[vId].requires);
-            const wanted = currentLots.find(l => l.sellerId !== current.id && needed.includes(l.goodId) && current.scraps >= l.price);
+            const playerLevel = useGameStore.getState().player.level;
+            const difficulty = getLevelData(playerLevel).botDifficulty;
+            
+            // По GDD: Легкий - до 100%, Средний - до 120%, Сложный - до 130%
+            let maxMultiplier = 1.0;
+            if (difficulty === 'medium') maxMultiplier = 1.2;
+            if (difficulty === 'hard') maxMultiplier = 1.3;
+
+            // Ищем подходящий лот (свой не берем)
+            const wanted = allLots.find(l => 
+                l.sellerId !== current.id && 
+                needed.includes(l.goodId) && 
+                current.scraps >= l.price &&
+                (l.price / l.amount) <= (GOODS[l.goodId].basePrice * maxMultiplier)
+            );
+
             if (wanted) {
-              current.scraps -= wanted.price; current.inventory[wanted.goodId] = (current.inventory[wanted.goodId] || 0) + wanted.amount;
-              const seller = state.players.find(p => p.id === wanted.sellerId);
-              if (seller) seller.scraps += wanted.price;
-              set({ lots: currentLots.filter(l => l.id !== wanted.id), players: [...state.players] });
+              current.scraps -= wanted.price; 
+              current.inventory[wanted.goodId] = (current.inventory[wanted.goodId] || 0) + wanted.amount;
+              
+              if (wanted.sellerId === 'storage') {
+                  set({ storage: get().storage.filter(l => l.id !== wanted.id), players: [...state.players] });
+              } else {
+                  const seller = state.players.find(p => p.id === wanted.sellerId);
+                  if (seller) seller.scraps += wanted.price;
+                  set({ lots: get().lots.filter(l => l.id !== wanted.id), players: [...state.players] });
+              }
             }
           }
           set({ phase: 'idle' }); get().endTurn();
@@ -200,7 +219,6 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
 
   buyLot: (lotId) => {
     const state = get();
-    // Ищем в обычных лотах или на складе
     let lot = state.lots.find(l => l.id === lotId);
     let isStorage = false;
     if (!lot) { lot = state.storage.find(l => l.id === lotId); isStorage = true; }

@@ -3,17 +3,27 @@ import { Overlay } from '../ui/Overlay';
 import { RectButton } from '../ui/RectButton';
 import { soundManager } from '../../audio/soundManager';
 
-const GITHUB_ISSUE_URL = 'https://github.com/Black-Cassette/fold-trade-battle/issues/new';
-
 export function FeedbackOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [title, setTitle] = useState('Обратная связь');
   const [text, setText] = useState('');
+  const [copied, setCopied] = useState(false);
 
-  const submit = () => {
+  const handleCopy = () => {
+    const fullText = `Название: ${title}\n\nТекст:\n${text}`;
+    navigator.clipboard.writeText(fullText).then(() => {
+      setCopied(true);
+      soundManager.stamp();
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const handleGitHub = () => {
+    // Замените на вашу реальную ссылку на репозиторий
+    const repoUrl = 'https://github.com/DPS-F/Fold-Trade-Battle-web-version/issues/new';
     const body = encodeURIComponent(`${text}\n\n---\nОтправлено из игры Fold, Trade & Battle.`);
     const t = encodeURIComponent(`[Feedback] ${title || 'Без названия'}`);
-    window.open(`${GITHUB_ISSUE_URL}?title=${t}&body=${body}`, '_blank', 'noopener');
-    soundManager.stamp();
+    window.open(`${repoUrl}?title=${t}&body=${body}`, '_blank', 'noopener');
+    soundManager.click();
   };
 
   return (
@@ -36,11 +46,21 @@ export function FeedbackOverlay({ open, onClose }: { open: boolean; onClose: () 
             maxLength={300}
             rows={6}
             onChange={(e) => setText(e.target.value)}
+            placeholder="Опишите баг или идею..."
           />
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span className="hint-text">Откроется GitHub Issue. Контакт разработчика: @Black_Cassette</span>
-          <RectButton onClick={submit} disabled={!title.trim() || !text.trim()}>Отправить →</RectButton>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+          <div className="hint-text" style={{ maxWidth: '50%' }}>
+            Вы можете скопировать текст и отправить его нам в Telegram <b>@Black_Cassette</b> или создать Issue на GitHub.
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <RectButton onClick={handleCopy} disabled={!title.trim() || !text.trim()}>
+              {copied ? 'Скопировано!' : 'Копировать'}
+            </RectButton>
+            <RectButton onClick={handleGitHub} disabled={!title.trim() || !text.trim()}>
+              GitHub Issue
+            </RectButton>
+          </div>
         </div>
       </div>
     </Overlay>

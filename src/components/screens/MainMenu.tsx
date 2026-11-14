@@ -10,8 +10,8 @@ import { FeedbackOverlay } from '../overlays/FeedbackOverlay';
 import { ConversionOverlay } from '../overlays/ConversionOverlay';
 import { SettingsOverlay } from '../overlays/SettingsOverlay';
 import { MetaOverlay } from '../overlays/MetaOverlay';
-import { soundManager } from '../../audio/soundManager';
 import { AchievementsOverlay } from '../overlays/AchievementsOverlay';
+import { soundManager } from '../../audio/soundManager';
 
 export function MainMenu() {
   const player = useGameStore(s => s.player);
@@ -79,19 +79,7 @@ export function MainMenu() {
         </motion.div>
       </div>
 
-      <div style={{ position: 'absolute', bottom: '5%', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 24 }}>
-        <RoundButton icon="🎁" label="Награды" onClick={() => openOverlay('meta-rewards')} />
-        <RoundButton icon="📖" label="Документация" onClick={() => openOverlay('documentation')} />
-        <RoundButton icon="💾" label="Сохранить" onClick={() => openOverlay('save-load')} />
-        <RoundButton icon="✉️" label="Обратная связь" onClick={() => openOverlay('feedback')} />
-      </div>
-
-      <div style={{ position: 'absolute', bottom: '5%', left: '4%' }}>
-        <RoundButton icon="👤" label="Профиль" onClick={() => openOverlay('profile')} />
-      </div>
-      <div style={{ position: 'absolute', bottom: '5%', right: '4%' }}>
-        <RoundButton icon="⚙️" label="Настройки" onClick={() => openOverlay('settings')} />
-      </div>
+      {/* Центральные кнопки */}
       <div style={{ position: 'absolute', bottom: '5%', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 24 }}>
         <RoundButton icon="🎁" label="Награды" onClick={() => openOverlay('meta-rewards')} />
         <RoundButton icon="🏆" label="Достижения" onClick={() => openOverlay('achievements')} />
@@ -99,6 +87,16 @@ export function MainMenu() {
         <RoundButton icon="💾" label="Сохранить" onClick={() => openOverlay('save-load')} />
         <RoundButton icon="✉️" label="Обратная связь" onClick={() => openOverlay('feedback')} />
       </div>
+
+      {/* Угловые кнопки */}
+      <div style={{ position: 'absolute', bottom: '5%', left: '4%' }}>
+        <RoundButton icon="👤" label="Профиль" onClick={() => openOverlay('profile')} />
+      </div>
+      <div style={{ position: 'absolute', bottom: '5%', right: '4%' }}>
+        <RoundButton icon="⚙️" label="Настройки" onClick={() => openOverlay('settings')} />
+      </div>
+
+      {/* Оверлеи */}
       <ProfileOverlay open={isOpen('profile')} onClose={closeOverlay} />
       <DocumentationOverlay open={isOpen('documentation')} onClose={closeOverlay} />
       <SaveLoadOverlay open={isOpen('save-load')} onClose={closeOverlay} />

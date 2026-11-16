@@ -15,6 +15,7 @@ export function BusinessBattle() {
   const phase = useBusinessStore(s => s.phase);
   const lastRoll = useBusinessStore(s => s.lastRoll);
   const winnerId = useBusinessStore(s => s.winnerId);
+  const log = useBusinessStore(s => s.log);
   const rollDice = useBusinessStore(s => s.rollDice);
 
   const openOverlay = useGameStore(s => s.openOverlay);
@@ -103,6 +104,15 @@ export function BusinessBattle() {
         Ход: {currentPlayer?.name} {isPlayerTurn && '(Ваш)'}
       </div>
 
+      {/* ЛОГ СОБЫТИЙ */}
+      <div style={{
+        position: 'absolute', left: 20, top: 80, width: 250, maxHeight: 400, overflowY: 'auto',
+        background: 'rgba(250, 243, 224, 0.8)', padding: 12, borderRadius: 4, border: '1px solid var(--paper-edge)',
+        fontFamily: 'var(--font-typewriter)', fontSize: 12, pointerEvents: 'none'
+      }}>
+        {log.map((l, i) => <div key={i} style={{ marginBottom: 4 }}>{l}</div>)}
+      </div>
+
       <div
         style={{
           position: 'relative', width: '100%', maxWidth: 900, aspectRatio: '1 / 1',
@@ -188,7 +198,6 @@ export function BusinessBattle() {
                   }}
                 >
                   <div>{p.name}</div>
-                  {/* Выводим деньги ботов и игрока прямо под именем */}
                   <div style={{ 
                     fontSize: 12, 
                     color: p.isBot ? 'var(--accent-burgundy)' : 'var(--accent-blue)',

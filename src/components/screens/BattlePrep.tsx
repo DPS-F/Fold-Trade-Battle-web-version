@@ -53,7 +53,9 @@ export function BattlePrep() {
         >
           Начать игру
         </button>
-        
+        <div style={{ fontSize: 12, color: 'var(--accent-burgundy)', maxWidth: 300, textAlign: 'center', marginTop: 8 }}>
+          Внимание: флот будет израсходован после боя. Для следующего боя потребуется новое складывание.
+        </div>
         <div style={{ display: 'flex', gap: 20 }}>
           <RoundButton icon="📐" label="Галерея шаблонов" onClick={() => openOverlay('templates-gallery')} />
           <RoundButton 

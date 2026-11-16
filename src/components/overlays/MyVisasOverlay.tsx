@@ -3,6 +3,7 @@ import { useBusinessStore } from '../../state/businessStore';
 import { VISAS } from '../../data/visas';
 import { GOODS } from '../../data/goods';
 import { RectButton } from '../ui/RectButton';
+import { BOARD } from '../../data/board';
 
 export function MyVisasOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
   const players = useBusinessStore(s => s.players);
@@ -10,13 +11,20 @@ export function MyVisasOverlay({ open, onClose }: { open: boolean; onClose: () =
   const closeVisa = useBusinessStore(s => s.closeVisa);
   
   const humanPlayer = players.find(p => !p.isBot) || players[0];
-  const isPlayerTurn = !players[turnIndex]?.isBot;
+  const currentPlayer = players[turnIndex];
+  const isPlayerTurn = !currentPlayer?.isBot;
+  
+  // Закрывать визитки можно только на клетке Старт!
+  const isOnStartCell = humanPlayer && BOARD[humanPlayer.position] === 'start';
 
   if (!humanPlayer) return null;
 
   return (
     <Overlay open={open} title="Мои визитки" onClose={onClose}>
       <div style={{ display: 'grid', gap: 16 }}>
+        <div style={{ fontSize: 12, color: isOnStartCell ? 'green' : 'var(--accent-burgundy)', textAlign: 'center', marginBottom: 8 }}>
+          {isOnStartCell ? 'Вы на клетке Старт. Можно закрывать контракты!' : 'Закрыть визитку можно только на клетке "Старт".'}
+        </div>
         {humanPlayer.visas.map(vId => {
           const visa = VISAS[vId];
           const isClosed = humanPlayer.closedVisas.includes(vId);
@@ -29,10 +37,10 @@ export function MyVisasOverlay({ open, onClose }: { open: boolean; onClose: () =
             );
           }
 
-          const reqGood = visa.requires[0];
+          const reqGood = humanPlayer.selectedRequirements[vId];
           const have = humanPlayer.inventory[reqGood] || 0;
           const need = visa.requiredAmount;
-          const canClose = have >= need && isPlayerTurn;
+          const canClose = have >= need && isPlayerTurn && isOnStartCell;
 
           return (
             <div key={vId} style={{ padding: 16, background: 'rgba(255,255,255,0.5)', border: '1px solid var(--paper-edge)', borderRadius: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

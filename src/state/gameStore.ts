@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { ALL_VISAS } from '../data/visas';
 import type { Rarity } from '../data/types';
 import { ACHIEVEMENTS } from '../data/achievements';
-import { ALL_QUESTS, type QuestDef, type QuestType } from '../data/quests';
+import { ALL_QUESTS, type QuestType } from '../data/quests';
 
 export interface FleetShip { id: string; templateId: string; maxHp: number; }
 export type Screen = 'loading' | 'main-menu' | 'business-prep' | 'business-battle' | 'battle-prep' | 'folding' | 'battle';
@@ -20,8 +20,7 @@ export interface PlayerState {
   lastLoginDate: string; lastWheelSpinDate: string;
   loginStreak: number;
   
-  // Квесты
-  dailyQuests: string[]; // ID квестов на сегодня
+  dailyQuests: string[];
   questProgress: Record<string, number>;
   questsClaimed: string[];
   lastQuestDate: string;
@@ -32,6 +31,8 @@ export interface GameState {
   setScreen: (s: Screen) => void; openOverlay: (o: OverlayId) => void; closeOverlay: () => void; closeAllOverlays: () => void;
   setPlayerName: (name: string) => void; setPlayerGender: (g: 'male' | 'female') => void;
   addCoins: (n: number) => void; addDiamonds: (n: number) => void; addPaper: (n: number) => void;
+  // Добавлен интерфейс addVisaPiece:
+  addVisaPiece: (visaId: string, amount: number) => void;
   convertCoinsToDiamonds: () => boolean; convertDiamondsToCoins: () => boolean;
   updateSettings: (s: Partial<PlayerSettings>) => void; markLoaded: () => void;
   registerBusinessWin: (profit: number, wonVs3: boolean) => void; registerBattleWin: (isBoss: boolean, flawless: boolean) => void;
@@ -97,6 +98,19 @@ export const useGameStore = create<GameState>((set, get) => ({
   addDiamonds: (n) => { const player = { ...get().player, diamonds: Math.max(0, get().player.diamonds + n) }; set({ player }); saveToStorage(player); },
   addPaper: (n) => { const player = { ...get().player, paper: Math.max(0, get().player.paper + n) }; set({ player }); saveToStorage(player); },
   
+  addVisaPiece: (visaId, amount) => {
+    const p = get().player;
+    const pieces = { ...p.visaPieces };
+    pieces[visaId] = (pieces[visaId] || 0) + amount;
+    let newVisasOwned = [...p.visasOwned];
+    const visa = ALL_VISAS.find(v => v.id === visaId);
+    if (visa && pieces[visaId] >= visa.piecesRequired && !newVisasOwned.includes(visaId)) {
+       newVisasOwned.push(visaId);
+    }
+    const player = { ...p, visaPieces: pieces, visasOwned: newVisasOwned };
+    set({ player }); saveToStorage(player);
+  },
+
   convertCoinsToDiamonds: () => {
     const { coins, diamonds } = get().player; if (coins < 300) return false;
     const player = { ...get().player, coins: coins - 300, diamonds: diamonds + 1 };
@@ -112,7 +126,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   updateFleet: (fleet) => { 
     const player = { ...get().player, fleet }; 
     set({ player }); saveToStorage(player); 
-    get().progressQuest('fold_ships', 1); // Квест на складывание
+    get().progressQuest('fold_ships', 1);
     if (fleet.filter(s => s.templateId === 'battleship').length >= 3) get().unlockAchievement('fleet_3_battleships');
   },
 
@@ -138,61 +152,41 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   registerBattleWin: (isBoss, flawless) => {
     const p = get().player;
-    const roll = Math.random() * 100;
-    let rarity: Rarity = 'simple';
-    if (roll >= 95) rarity = 'collection';
-    else if (roll >= 85) rarity = 'legendary';
-    else if (roll >= 65) rarity = 'epic';
-    else if (roll >= 35) rarity = 'rare';
-
-    const visasOfRarity = ALL_VISAS.filter(v => v.rarity === rarity);
-    let targetVisa = visasOfRarity.find(v => (p.visaPieces[v.id] || 0) < v.piecesRequired);
     
-    let paperReward = 0;
-    let newPieces = { ...p.visaPieces };
-    let newVisasOwned = [...p.visasOwned];
+    // Шанс фрагмента 75%
+    if (Math.random() <= 0.75) {
+        const roll = Math.random() * 100;
+        let rarity: Rarity = 'simple';
+        if (roll >= 95) rarity = 'collection';
+        else if (roll >= 85) rarity = 'legendary';
+        else if (roll >= 65) rarity = 'epic';
+        else if (roll >= 35) rarity = 'rare';
 
-    if (targetVisa) {
-      newPieces[targetVisa.id] = (newPieces[targetVisa.id] || 0) + 1;
-      if (newPieces[targetVisa.id] >= targetVisa.piecesRequired && !newVisasOwned.includes(targetVisa.id)) {
-        newVisasOwned.push(targetVisa.id);
-        alert(`Вы собрали визитку: ${targetVisa.name}!`);
-      } else {
-        alert(`Вы получили кусок визитки: ${targetVisa.name}! (${newPieces[targetVisa.id]}/${targetVisa.piecesRequired})`);
-      }
-    } else {
-      if (rarity === 'simple' || rarity === 'rare') paperReward = 1;
-      else if (rarity === 'epic' || rarity === 'legendary') paperReward = 2;
-      else paperReward = 3;
-      alert(`Все визитки этой редкости открыты! Взамен вы получили ${paperReward} бумаги.`);
+        const visasOfRarity = ALL_VISAS.filter(v => v.rarity === rarity);
+        let targetVisa = visasOfRarity.find(v => (p.visaPieces[v.id] || 0) < v.piecesRequired);
+        
+        if (targetVisa) {
+          get().addVisaPiece(targetVisa.id, 1);
+          alert(`Вы получили кусок визитки: ${targetVisa.name}!`);
+        } else {
+          alert(`Все визитки этой редкости открыты!`);
+        }
     }
 
-    const player = { ...p, battleWins: p.battleWins + 1, coins: p.coins + 50, paper: p.paper + paperReward, visaPieces: newPieces, visasOwned: newVisasOwned };
+    const player = { ...get().player, battleWins: get().player.battleWins + 1, coins: get().player.coins + 50 };
     set({ player }); saveToStorage(player);
 
     get().unlockAchievement('first_battle_win');
-    if (p.battleWins + 1 >= 10) get().unlockAchievement('battle_10');
-    if (p.battleWins + 1 >= 25) get().unlockAchievement('battle_25');
+    if (player.battleWins >= 10) get().unlockAchievement('battle_10');
+    if (player.battleWins >= 25) get().unlockAchievement('battle_25');
     if (flawless) get().unlockAchievement('flawless_victory');
     
     if (isBoss) {
-      if (p.level === 3) get().unlockAchievement('boss_3');
-      if (p.level === 6) get().unlockAchievement('boss_6');
-      if (p.level === 9) get().unlockAchievement('boss_9');
-      if (p.level === 12) get().unlockAchievement('boss_12');
+      if (player.level === 3) get().unlockAchievement('boss_3');
+      if (player.level === 6) get().unlockAchievement('boss_6');
+      if (player.level === 9) get().unlockAchievement('boss_9');
+      if (player.level === 12) get().unlockAchievement('boss_12');
     }
-
-    // Достижения за визитки
-    if (newVisasOwned.length >= 3) get().unlockAchievement('collector_1');
-    if (newVisasOwned.length >= 5) get().unlockAchievement('collector_2');
-    if (newVisasOwned.length >= 8) get().unlockAchievement('collector_3');
-    if (newVisasOwned.length >= 10) get().unlockAchievement('all_visas');
-    
-    const ownedRarities = newVisasOwned.map(id => ALL_VISAS.find(v => v.id === id)?.rarity);
-    if (ownedRarities.includes('rare')) get().unlockAchievement('rare_visa');
-    if (ownedRarities.includes('epic')) get().unlockAchievement('epic_visa');
-    if (ownedRarities.includes('legendary')) get().unlockAchievement('legendary_visa');
-    if (ownedRarities.includes('collection')) get().unlockAchievement('collection_visa');
 
     get().progressQuest('battle_win', 1);
   },
@@ -201,12 +195,10 @@ export const useGameStore = create<GameState>((set, get) => ({
     const today = new Date().toDateString();
     const p = get().player;
     
-    // Стрик
     const yesterday = new Date(Date.now() - 86400000).toDateString();
     const newStreak = p.lastLoginDate === yesterday ? p.loginStreak + 1 : 1;
     if (newStreak >= 5) get().unlockAchievement('daily_streak');
 
-    // Ежедневные квесты
     let newQuests = p.dailyQuests;
     let newQuestProgress = p.questProgress;
     let newQuestsClaimed = p.questsClaimed;
@@ -254,7 +246,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   progressQuest: (type, amount) => {
     const p = get().player;
-    if (!p.dailyQuests.length) return; // Квесты не сгенерированы (не заходил сегодня)
+    if (!p.dailyQuests.length) return;
 
     let changed = false;
     const newProgress = { ...p.questProgress };
@@ -285,7 +277,6 @@ export const useGameStore = create<GameState>((set, get) => ({
      const newClaimed = [...p.questsClaimed, questId];
      let newCoins = p.coins + q.rewardCoins;
      
-     // Если все 5 квестов выполнены, даем кусок визитки
      let newPieces = { ...p.visaPieces };
      let newVisasOwned = [...p.visasOwned];
      let alertMsg = `Выполнено: ${q.title}. Награда: ${q.rewardCoins} 🪙.`;

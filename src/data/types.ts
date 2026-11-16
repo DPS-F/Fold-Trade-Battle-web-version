@@ -12,8 +12,8 @@ export interface Visa {
   rarity: Rarity;
   produces: string;
   requires: string[];
-  requiredAmount: number; // Сколько товара нужно для закрытия в схватке
-  piecesRequired: number; // Сколько кусков нужно для открытия визитки
+  requiredAmount: number;
+  piecesRequired: number;
   rentPrice: number;
   description: string;
 }
@@ -23,6 +23,7 @@ export interface Template {
   name: string;
   hp: number;
   damage: number;
+  spd: number; // <--- НОВЫЙ ПАРАМЕТР
   cost: number;
   paper: number;
   time: number;
@@ -37,6 +38,6 @@ export interface GameLevel {
   tier: number;
   cyclesRequired: number;
   botsCount: number;
-  botDifficulty: 'easy' | 'medium' | 'hard';
+  botDifficulty: 'easy' | 'medium' | 'hard' | 'expert';
   isBoss: boolean;
 }

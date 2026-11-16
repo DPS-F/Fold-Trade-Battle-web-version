@@ -31,6 +31,16 @@ export function BattlePrep() {
     <div className="table-bg flex-center" style={{ flexDirection: 'column', gap: 24 }}>
       <div className="burned-title" style={{ position: 'absolute', top: '5%' }}>Бой</div>
 
+      {/* Счетчик бумаги */}
+      <div style={{
+        position: 'absolute', top: 20, right: 20, background: 'var(--paper)',
+        padding: '10px 20px', borderRadius: 4, fontFamily: 'var(--font-typewriter)',
+        fontSize: 20, boxShadow: 'var(--shadow-soft)', border: '1px solid var(--paper-edge)',
+        color: 'var(--burned)', fontWeight: 'bold'
+      }}>
+        📄 Бумага: {player.paper}
+      </div>
+
       {/* Отображение текущего флота на столе */}
       <div style={{ position: 'absolute', top: '20%', left: '10%', right: '10%', display: 'flex', gap: 20, justifyContent: 'center', flexWrap: 'wrap' }}>
         {player.fleet.map((ship, i) => (
@@ -53,9 +63,10 @@ export function BattlePrep() {
         >
           Начать игру
         </button>
-        <div style={{ fontSize: 12, color: 'var(--accent-burgundy)', maxWidth: 300, textAlign: 'center', marginTop: 8 }}>
+        <div style={{ fontSize: 12, color: 'var(--accent-burgundy)', maxWidth: 300, textAlign: 'center', marginTop: -10 }}>
           Внимание: флот будет израсходован после боя. Для следующего боя потребуется новое складывание.
         </div>
+        
         <div style={{ display: 'flex', gap: 20 }}>
           <RoundButton icon="📐" label="Галерея шаблонов" onClick={() => openOverlay('templates-gallery')} />
           <RoundButton 

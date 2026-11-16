@@ -81,14 +81,16 @@ export function BusinessBattle() {
 
   return (
     <div className="table-bg flex-center" style={{ padding: 40 }}>
+      {/* Счетчик обрезков ИГРОКА */}
       <div
         style={{
           position: 'absolute', top: 20, right: 20, background: 'var(--paper)',
           padding: '10px 20px', borderRadius: 4, fontFamily: 'var(--font-typewriter)',
           fontSize: 20, boxShadow: 'var(--shadow-soft)', border: '1px solid var(--paper-edge)',
+          color: 'var(--accent-blue)', fontWeight: 'bold'
         }}
       >
-        🪙 {currentPlayer?.scraps || 0} обрезков
+        Ваши обрезки: 🪙 {players.find(p => !p.isBot)?.scraps || 0}
       </div>
 
       <div
@@ -112,12 +114,10 @@ export function BusinessBattle() {
       >
         {BOARD.map((cellType, i) => {
           let row = 0, col = 0;
-          
-          // Идеальный круг 36 клеток на сетке 10x10
-          if (i < 10) { row = 1; col = i + 1; } // Верх (10)
-          else if (i < 18) { row = i - 8; col = 10; } // Право (8)
-          else if (i < 28) { row = 10; col = 10 - (i - 18); } // Низ (10)
-          else { row = 10 - (i - 27); col = 1; } // Лево (8)
+          if (i < 10) { row = 1; col = i + 1; }
+          else if (i < 18) { row = i - 8; col = 10; }
+          else if (i < 28) { row = 10; col = 10 - (i - 18); }
+          else { row = 10 - (i - 27); col = 1; }
 
           const isVertical = col === 1 || col === 10;
           const isFlipped = col === 10 || row === 1;
@@ -126,10 +126,8 @@ export function BusinessBattle() {
             <div
               key={i}
               style={{
-                gridRow: row,
-                gridColumn: col,
-                background:
-                  cellType === 'start' ? '#d4af37' : cellType === 'market' ? '#f4ebd9'
+                gridRow: row, gridColumn: col,
+                background: cellType === 'start' ? '#d4af37' : cellType === 'market' ? '#f4ebd9'
                     : cellType === 'production' ? '#dcc39f' : cellType === 'penalty' ? '#c49b7b' : '#faf3e0',
                 border: '1px solid rgba(0,0,0,0.15)', borderRadius: 4,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -139,10 +137,7 @@ export function BusinessBattle() {
                 transform: isFlipped && isVertical ? 'rotate(180deg)' : 'none',
               }}
             >
-              <span style={{ 
-                opacity: 0.8, pointerEvents: 'none',
-                transform: (!isVertical && isFlipped) ? 'rotate(180deg)' : 'none'
-              }}>
+              <span style={{ opacity: 0.8, pointerEvents: 'none', transform: (!isVertical && isFlipped) ? 'rotate(180deg)' : 'none' }}>
                 {cellType === 'start' ? 'Старт' : cellType === 'market' ? 'Рынок'
                   : cellType === 'production' ? 'Произв.' : cellType === 'penalty' ? 'Штраф' : 'Прогулка'}
               </span>
@@ -187,11 +182,20 @@ export function BusinessBattle() {
                 <div
                   style={{
                     fontFamily: 'var(--font-typewriter)', fontWeight: isPlayerTurn && isHuman ? 'bold' : 'normal',
-                    background: 'rgba(255,255,255,0.8)', padding: '4px 12px',
+                    background: 'rgba(255,255,255,0.85)', padding: '4px 12px',
                     borderRadius: 4, border: '1px solid rgba(0,0,0,0.1)', boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                    textAlign: 'center', minWidth: 100
                   }}
                 >
-                  {p.name}
+                  <div>{p.name}</div>
+                  {/* Выводим деньги ботов и игрока прямо под именем */}
+                  <div style={{ 
+                    fontSize: 12, 
+                    color: p.isBot ? 'var(--accent-burgundy)' : 'var(--accent-blue)',
+                    marginTop: 2 
+                  }}>
+                    🪙 {p.scraps}
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: 4 }}>
                   {p.visas.map(vId => (

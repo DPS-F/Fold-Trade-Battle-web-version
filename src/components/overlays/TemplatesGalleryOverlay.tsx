@@ -29,6 +29,10 @@ export function TemplatesGalleryOverlay({ open, onClose, onSelectTemplate }: Pro
 
   return (
     <Overlay open={open} title="Галерея шаблонов" onClose={onClose}>
+      <div style={{ marginBottom: 16, textAlign: 'right', fontFamily: 'var(--font-typewriter)', color: 'var(--burned)' }}>
+        Ваш запас: 📄 Бумага: {player.paper} | 🪙 Монеты: {player.coins}
+      </div>
+      
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minHeight: 400 }}>
         {ALL_TEMPLATES.map(template => {
           const isUnlocked = player.unlockedTemplates.includes(template.id);

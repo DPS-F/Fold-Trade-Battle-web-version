@@ -14,16 +14,17 @@ export function MyVisasOverlay({ open, onClose }: { open: boolean; onClose: () =
   const currentPlayer = players[turnIndex];
   const isPlayerTurn = !currentPlayer?.isBot;
   
-  // Закрывать визитки можно только на клетке Старт!
-  const isOnStartCell = humanPlayer && BOARD[humanPlayer.position] === 'start';
+  // Закрывать можно на Старте или Прогулке
+  const currentCell = humanPlayer ? BOARD[humanPlayer.position] : null;
+  const isValidCellToClose = currentCell === 'start' || currentCell === 'walk';
 
   if (!humanPlayer) return null;
 
   return (
     <Overlay open={open} title="Мои визитки" onClose={onClose}>
       <div style={{ display: 'grid', gap: 16 }}>
-        <div style={{ fontSize: 12, color: isOnStartCell ? 'green' : 'var(--accent-burgundy)', textAlign: 'center', marginBottom: 8 }}>
-          {isOnStartCell ? 'Вы на клетке Старт. Можно закрывать контракты!' : 'Закрыть визитку можно только на клетке "Старт".'}
+        <div style={{ fontSize: 12, color: isValidCellToClose ? 'green' : 'var(--accent-burgundy)', textAlign: 'center', marginBottom: 8, fontWeight: 'bold' }}>
+          {isValidCellToClose ? 'Вы можете закрывать контракты!' : 'Закрыть визитку можно только на клетках "Старт" или "Прогулка".'}
         </div>
         {humanPlayer.visas.map(vId => {
           const visa = VISAS[vId];
@@ -40,7 +41,7 @@ export function MyVisasOverlay({ open, onClose }: { open: boolean; onClose: () =
           const reqGood = humanPlayer.selectedRequirements[vId];
           const have = humanPlayer.inventory[reqGood] || 0;
           const need = visa.requiredAmount;
-          const canClose = have >= need && isPlayerTurn && isOnStartCell;
+          const canClose = have >= need && isPlayerTurn && isValidCellToClose;
 
           return (
             <div key={vId} style={{ padding: 16, background: 'rgba(255,255,255,0.5)', border: '1px solid var(--paper-edge)', borderRadius: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

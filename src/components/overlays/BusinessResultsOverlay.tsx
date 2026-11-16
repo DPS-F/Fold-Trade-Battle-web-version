@@ -8,17 +8,22 @@ import { soundManager } from '../../audio/soundManager';
 export function BusinessResultsOverlay({ winnerId }: { winnerId: string }) {
   const setScreen = useGameStore(s => s.setScreen);
   const registerBusinessWin = useGameStore(s => s.registerBusinessWin);
+  
+  // Получаем количество игроков, чтобы понять, была ли это игра против 3 ботов
+  const players = useBusinessStore(s => s.players);
+  
   const isPlayerWinner = winnerId === 'player';
+  const wonVs3 = players.length === 4; // 1 игрок + 3 бота
 
   useEffect(() => {
     if (isPlayerWinner) {
       soundManager.win();
-      // Начисляем награду, передаем условный оборот
-      registerBusinessWin(1000); 
+      // Передаем 2 аргумента, как теперь требует gameStore
+      registerBusinessWin(1000, wonVs3); 
     } else {
       soundManager.lose();
     }
-  }, [isPlayerWinner, registerBusinessWin]);
+  }, [isPlayerWinner, registerBusinessWin, wonVs3]);
 
   return (
     <div className="overlay-backdrop">

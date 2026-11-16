@@ -4,9 +4,8 @@ import { GOODS } from '../data/goods';
 import { BOARD } from '../data/board';
 import type { CellType } from '../data/types';
 import { useGameStore } from './gameStore';
-import { getLevelData } from '../data/progression';
 import { ALL_VISAS } from '../data/visas';
-import { decideBotAction, type BotMemory, type BotAction } from './botBrain';
+import { decideBotAction, type BotMemory } from './botBrain';
 
 export interface BusinessPlayer {
   id: string; name: string; isBot: boolean; scraps: number; position: number;
@@ -25,7 +24,7 @@ export interface BusinessState {
   turnIndex: number; phase: 'idle' | 'rolling' | 'moving' | 'action' | 'ended';
   lastRoll: number; winnerId: string | null; turnCount: number; roundCount: number;
   botMemory: Record<string, BotMemory>;
-  log: string[]; // Добавили лог событий
+  log: string[];
 
   startMatch: (playerVisas: string[], botCount: number, botDifficulty: string) => void;
   rollDice: () => void; executeCell: () => void; endTurn: () => void;
@@ -134,6 +133,7 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
   executeCell: () => {
     const state = get();
     
+    // 1. Обновление склада
     if (state.roundCount > 0 || (state.roundCount === 0 && state.storage.length === 0)) {
         const allReqs = state.players.flatMap(p => Object.values(p.selectedRequirements));
         const allOutputs = state.players.flatMap(p => p.visas.map(v => VISAS[v].produces));
@@ -153,6 +153,7 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
         set({ storage: storageLots });
     }
 
+    // 2. Действие на клетке
     const current = state.players[state.turnIndex];
     const cell: CellType = BOARD[current.position];
 
@@ -169,17 +170,32 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
       else { current.scraps = 0; current.inventory = {}; }
       get().addLog(`${current.name} попал на штраф. Заплатил ${totalPenalty} или потерял товар.`);
       set({ players: [...state.players], phase: 'idle' }); get().endTurn();
+    
     } else if (cell === 'market' || cell === 'production') {
-      if (current.isBot) {
-        const memory = state.botMemory[current.id] || { grudge: {}, delayedCloseCount: 0 };
-        if (cell === 'market' && !current.role) {
-          current.role = Math.random() > 0.5 ? 'buyer' : 'seller'; // Бот получает роль
+      
+      // --- ИСПРАВЛЕНИЕ РОЛЕЙ ---
+      if (cell === 'market') {
+        // Розыгрыш роли с антиповтором
+        let newRole: 'buyer' | 'seller' = Math.random() > 0.5 ? 'buyer' : 'seller';
+        const hist = current.roleHistory;
+        
+        // Если 2 предыдущие роли совпадают с новой, принудительно меняем
+        if (hist.length >= 2 && hist[hist.length - 1] === newRole && hist[hist.length - 2] === newRole) {
+            newRole = newRole === 'buyer' ? 'seller' : 'buyer';
         }
         
+        current.role = newRole;
+        current.roleHistory = [...hist, newRole].slice(-3); // Храним последние 3 роли
+        get().addLog(`${current.name} попал на рынок. Роль: ${newRole === 'buyer' ? 'Покупатель' : 'Продавец'}`);
+      }
+
+      // Действие бота
+      if (current.isBot) {
+        const memory = state.botMemory[current.id] || { grudge: {}, delayedCloseCount: 0 };
         const action = decideBotAction(state, current, memory);
+        
         set({ botMemory: { ...state.botMemory, [current.id]: memory } });
         
-        // Обработка действия бота
         const pIdx = state.players.findIndex(p => p.id === current.id);
         const newPlayers = [...state.players];
 
@@ -223,12 +239,11 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
         }
 
         set({ players: newPlayers, phase: 'idle' });
-        setTimeout(() => get().endTurn(), 1000); // Даем время прочитать лог
+        setTimeout(() => get().endTurn(), 1000); 
+      
       } else {
-        if (cell === 'market' && !current.role) {
-          current.role = Math.random() > 0.5 ? 'buyer' : 'seller';
-          set({ players: [...state.players] });
-        }
+        // Для игрока просто обновляем стейт, чтобы UI открыл оверлей с новой ролью
+        set({ players: [...state.players] });
       }
     }
   },
@@ -239,7 +254,7 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     if (winner) { set({ phase: 'ended', winnerId: winner.id }); return; }
 
     const nextIndex = (state.turnIndex + 1) % state.players.length;
-    set({ turnIndex: nextIndex, phase: 'idle', turnCount: state.turnCount + 1, log: [] }); // Очищаем лог для след хода
+    set({ turnIndex: nextIndex, phase: 'idle', turnCount: state.turnCount + 1, log: [] }); 
     if (state.players[nextIndex].isBot) setTimeout(() => get().rollDice(), 1000);
   },
 

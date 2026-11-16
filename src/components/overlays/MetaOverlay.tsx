@@ -3,11 +3,13 @@ import { Overlay } from '../ui/Overlay';
 import { useGameStore } from '../../state/gameStore';
 import { RectButton } from '../ui/RectButton';
 import { soundManager } from '../../audio/soundManager';
+import { ALL_QUESTS } from '../../data/quests';
 
 export function MetaOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
   const player = useGameStore(s => s.player);
   const claimDailyBonus = useGameStore(s => s.claimDailyBonus);
   const spinWheel = useGameStore(s => s.spinWheel);
+  const claimQuestReward = useGameStore(s => s.claimQuestReward);
 
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinResult, setSpinResult] = useState<string | null>(null);
@@ -22,7 +24,7 @@ export function MetaOverlay({ open, onClose }: { open: boolean; onClose: () => v
     if (!canClaimDaily) return;
     claimDailyBonus(100, 2);
     soundManager.stamp();
-    alert('Вы получили: 100 монет и 2 бумаги!');
+    alert('Вы получили: 100 монет и 2 бумаги!\nКвесты на сегодня обновлены.');
   };
 
   const handleSpin = () => {
@@ -56,8 +58,8 @@ export function MetaOverlay({ open, onClose }: { open: boolean; onClose: () => v
   };
 
   return (
-    <Overlay open={open} title="Ежедневные награды" onClose={onClose}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+    <Overlay open={open} title="Ежедневные награды" onClose={onClose} width={800}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
         
         <div style={{ padding: 20, background: 'rgba(255,255,255,0.5)', border: '1px solid var(--paper-edge)', borderRadius: 4, textAlign: 'center' }}>
           <h3 style={{ fontFamily: 'var(--font-typewriter)' }}>Бонус за вход</h3>
@@ -70,7 +72,7 @@ export function MetaOverlay({ open, onClose }: { open: boolean; onClose: () => v
         <div style={{ padding: 20, background: 'rgba(255,255,255,0.5)', border: '1px solid var(--paper-edge)', borderRadius: 4, textAlign: 'center', overflow: 'hidden' }}>
           <h3 style={{ fontFamily: 'var(--font-typewriter)' }}>Колесо фортуны</h3>
           
-          <div style={{ position: 'relative', width: 160, height: 160, margin: '20px auto' }}>
+          <div style={{ position: 'relative', width: 140, height: 140, margin: '10px auto' }}>
             <div style={{
               width: '100%', height: '100%', borderRadius: '50%',
               background: 'conic-gradient(#c9a227 0deg 72deg, #d4af37 72deg 144deg, #f0e4c8 144deg 216deg, #a87b54 216deg 288deg, #e0cfa4 288deg 360deg)',
@@ -82,14 +84,43 @@ export function MetaOverlay({ open, onClose }: { open: boolean; onClose: () => v
           </div>
 
           {spinResult ? (
-            <div style={{ fontSize: 18, fontFamily: 'var(--font-typewriter)', color: 'green', marginBottom: 10 }}>Выигрыш: {spinResult}</div>
-          ) : <div style={{ height: 28 }} />}
+            <div style={{ fontSize: 16, fontFamily: 'var(--font-typewriter)', color: 'green', marginBottom: 10 }}>Выигрыш: {spinResult}</div>
+          ) : <div style={{ height: 24 }} />}
 
           <RectButton onClick={handleSpin} disabled={isSpinning || !canSpin}>
             {isSpinning ? 'Крутится...' : isFreeSpin ? 'Крутить (Бесплатно)' : 'Крутить (1 💎)'}
           </RectButton>
         </div>
+      </div>
 
+      <div style={{ padding: 20, background: 'rgba(255,255,255,0.5)', border: '1px solid var(--paper-edge)', borderRadius: 4 }}>
+        <h3 style={{ fontFamily: 'var(--font-typewriter)', marginTop: 0, marginBottom: 16 }}>Ежедневные квесты</h3>
+        <div style={{ display: 'grid', gap: 12 }}>
+          {player.dailyQuests.map(qId => {
+            const q = ALL_QUESTS.find(x => x.id === qId);
+            if (!q) return null;
+            const prog = player.questProgress[qId] || 0;
+            const isClaimed = player.questsClaimed.includes(qId);
+            const isComplete = prog >= q.target;
+
+            return (
+              <div key={q.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', background: isClaimed ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.6)', border: '1px solid var(--paper-edge)', borderRadius: 4 }}>
+                <div>
+                  <div style={{ fontFamily: 'var(--font-typewriter)', fontSize: 13, textDecoration: isClaimed ? 'line-through' : 'none' }}>{q.title}</div>
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>Прогресс: {Math.min(prog, q.target)} / {q.target}</div>
+                </div>
+                <RectButton 
+                  disabled={!isComplete || isClaimed} 
+                  onClick={() => claimQuestReward(qId)}
+                  style={{ padding: '6px 12px', fontSize: 12 }}
+                >
+                  {isClaimed ? 'Получено' : `Забрать ${q.rewardCoins} 🪙`}
+                </RectButton>
+              </div>
+            );
+          })}
+          {player.dailyQuests.length === 0 && <div style={{ textAlign: 'center', opacity: 0.5 }}>Заберите ежедневный бонус, чтобы получить квесты.</div>}
+        </div>
       </div>
     </Overlay>
   );

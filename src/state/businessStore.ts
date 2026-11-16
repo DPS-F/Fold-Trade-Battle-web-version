@@ -33,7 +33,6 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
   players: [], lots: [], storage: [], turnIndex: 0, phase: 'idle', lastRoll: 0, winnerId: null, turnCount: 0, roundCount: 0,
 
   startMatch: (playerVisas, botCount) => {
-    // Даем всем по 300 обрезков для комфортного старта
     const players: BusinessPlayer[] = [
       { id: 'player', name: 'Вы', isBot: false, scraps: 300, position: 0, inventory: {}, visas: playerVisas, closedVisas: [], role: null, roleHistory: [] }
     ];
@@ -104,13 +103,18 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
   executeCell: () => {
     const state = get();
     
-    // Склад появляется после первого круга
+    // --- СКЛАД: Исключаем товары, которые производят участники (чтобы стимулировать торговлю) ---
     if (state.roundCount > 0 && state.storage.length === 0) {
+        const playerProduces = state.players.flatMap(p => p.visas.map(v => VISAS[v].produces));
         const allNeeds = state.players.flatMap(p => p.visas.flatMap(v => VISAS[v].requires));
         const uniqueNeeds = [...new Set(allNeeds)];
+        
+        // Товары, которые НЕ производятся никем из игроков
+        const safeGoods = uniqueNeeds.filter(g => !playerProduces.includes(g));
+
         const storageLots: Lot[] = [];
         for (let i = 0; i < 3; i++) {
-            const goodId = uniqueNeeds[Math.floor(Math.random() * uniqueNeeds.length)];
+            const goodId = safeGoods.length > 0 ? safeGoods[Math.floor(Math.random() * safeGoods.length)] : uniqueNeeds[Math.floor(Math.random() * uniqueNeeds.length)];
             if (goodId) {
                 const amount = Math.floor(Math.random() * 5) + 1;
                 storageLots.push({
@@ -149,33 +153,34 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
           current.roleHistory = [current.roleHistory[1] || botRole, botRole];
 
           if (botRole === 'seller') {
-            // Бот-продавец выставляет свой товар
             const sellable = Object.entries(current.inventory).find(([_, amt]) => amt > 0);
             if (sellable) {
               const [gId, amt] = sellable;
-              const amount = Math.min(amt, 5); // Макс 5 в лот
-              const price = Math.floor(GOODS[gId].basePrice * amount); // Продает по базовой цене (100%)
+              const amount = Math.min(amt, 5);
+              const price = Math.floor(GOODS[gId].basePrice * amount);
               current.inventory[gId] -= amount;
               set({ lots: [...get().lots, { id: `lot_${Date.now()}_${Math.random()}`, sellerId: current.id, goodId: gId, amount, price }], players: [...state.players] });
             }
           } else {
-            // Бот-покупатель ищет нужный товар
+            // --- ИСПРАВЛЕНИЕ БАГА: Сравниваем ЦЕНУ ЗА ЕДИНИЦУ ---
             const needed = current.visas.flatMap(vId => VISAS[vId].requires);
             const playerLevel = useGameStore.getState().player.level;
             const difficulty = getLevelData(playerLevel).botDifficulty;
             
-            // По GDD: Легкий - до 100%, Средний - до 120%, Сложный - до 130%
             let maxMultiplier = 1.0;
             if (difficulty === 'medium') maxMultiplier = 1.2;
             if (difficulty === 'hard') maxMultiplier = 1.3;
 
-            // Ищем подходящий лот (свой не берем)
-            const wanted = allLots.find(l => 
-                l.sellerId !== current.id && 
-                needed.includes(l.goodId) && 
-                current.scraps >= l.price &&
-                (l.price / l.amount) <= (GOODS[l.goodId].basePrice * maxMultiplier)
-            );
+            const wanted = allLots.find(l => {
+                if (l.sellerId === current.id) return false;
+                if (!needed.includes(l.goodId)) return false;
+                if (current.scraps < l.price) return false;
+                
+                // Проверка цены за одну штуку!
+                const pricePerUnit = l.price / l.amount;
+                const maxAllowedPrice = GOODS[l.goodId].basePrice * maxMultiplier;
+                return pricePerUnit <= maxAllowedPrice;
+            });
 
             if (wanted) {
               current.scraps -= wanted.price; 
@@ -275,7 +280,10 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     if (player.closedVisas.length === player.visas.length) set({ phase: 'ended', winnerId: player.id });
     else get().endTurn();
     
-    if (player.id === 'player') useGameStore.getState().unlockAchievement('close_visa');
+    if (player.id === 'player') {
+        useGameStore.getState().unlockAchievement('close_visa');
+        useGameStore.getState().progressQuest('close_visas', 1);
+    }
     return true;
   },
 }));

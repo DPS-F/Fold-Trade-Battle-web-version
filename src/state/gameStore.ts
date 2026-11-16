@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { ALL_VISAS } from '../data/visas';
 import type { Rarity } from '../data/types';
 import { ACHIEVEMENTS } from '../data/achievements';
+import { ALL_QUESTS, type QuestDef, type QuestType } from '../data/quests';
 
 export interface FleetShip { id: string; templateId: string; maxHp: number; }
 export type Screen = 'loading' | 'main-menu' | 'business-prep' | 'business-battle' | 'battle-prep' | 'folding' | 'battle';
@@ -14,7 +15,16 @@ export interface PlayerState {
   businessWins: number; battleWins: number; coins: number; diamonds: number;
   paper: number; paint: number; visasOwned: string[]; visaPieces: Record<string, number>;
   unlockedTemplates: string[]; achievements: string[]; fleet: FleetShip[];
-  settings: PlayerSettings; lastLoginDate: string; lastWheelSpinDate: string;
+  settings: PlayerSettings; 
+  
+  lastLoginDate: string; lastWheelSpinDate: string;
+  loginStreak: number;
+  
+  // Квесты
+  dailyQuests: string[]; // ID квестов на сегодня
+  questProgress: Record<string, number>;
+  questsClaimed: string[];
+  lastQuestDate: string;
 }
 
 export interface GameState {
@@ -24,33 +34,45 @@ export interface GameState {
   addCoins: (n: number) => void; addDiamonds: (n: number) => void; addPaper: (n: number) => void;
   convertCoinsToDiamonds: () => boolean; convertDiamondsToCoins: () => boolean;
   updateSettings: (s: Partial<PlayerSettings>) => void; markLoaded: () => void;
-  registerBusinessWin: (profit: number) => void; registerBattleWin: () => void;
+  registerBusinessWin: (profit: number, wonVs3: boolean) => void; registerBattleWin: (isBoss: boolean, flawless: boolean) => void;
   updateFleet: (fleet: FleetShip[]) => void; claimDailyBonus: (coins: number, paper: number) => void;
   spinWheel: (rewardType: string, amount: number) => void; unlockAchievement: (id: string) => void;
+  progressQuest: (type: QuestType, amount: number) => void;
+  claimQuestReward: (questId: string) => void;
 }
 
 const DEFAULT_PLAYER: PlayerState = {
   name: 'Игрок', gender: 'male', level: 1, cyclesDone: 0, businessWins: 0, battleWins: 0,
   coins: 250, diamonds: 3, paper: 10, paint: 0,
   visasOwned: ['zhiest'], visaPieces: {}, unlockedTemplates: ['scout'],
-  achievements: [], fleet: [],
-  settings: { musicVolume: 0.35, sfxVolume: 0.6, animations: true, uiScale: 1 },
-  lastLoginDate: '', lastWheelSpinDate: '',
+  achievements: [], fleet: [], settings: { musicVolume: 0.35, sfxVolume: 0.6, animations: true, uiScale: 1 },
+  lastLoginDate: '', lastWheelSpinDate: '', loginStreak: 0,
+  dailyQuests: [], questProgress: {}, questsClaimed: [], lastQuestDate: '',
 };
 
 const STORAGE_KEY = 'ftb-save-v1';
+
+function generateDailyQuests(): string[] {
+  const shuffled = [...ALL_QUESTS].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, 5).map(q => q.id);
+}
+
 function loadFromStorage(): Partial<PlayerState> | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed && parsed.version === 1 && parsed.player) return { ...DEFAULT_PLAYER, ...parsed.player };
+    if (parsed && parsed.version === 1 && parsed.player) {
+      return { ...DEFAULT_PLAYER, ...parsed.player };
+    }
   } catch (e) {}
   return null;
 }
+
 export function saveToStorage(player: PlayerState) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, player })); } catch (e) {}
 }
+
 const saved = loadFromStorage();
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -66,7 +88,12 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   setPlayerName: (name) => { const player = { ...get().player, name: name.slice(0, 20) }; set({ player }); saveToStorage(player); },
   setPlayerGender: (gender) => { const player = { ...get().player, gender }; set({ player }); saveToStorage(player); },
-  addCoins: (n) => { const player = { ...get().player, coins: Math.max(0, get().player.coins + n) }; set({ player }); saveToStorage(player); get().unlockAchievement('rich_man'); },
+  addCoins: (n) => { 
+    const player = { ...get().player, coins: Math.max(0, get().player.coins + n) }; 
+    set({ player }); saveToStorage(player); 
+    get().unlockAchievement('rich_man'); 
+    if (n > 0) get().progressQuest('earn_coins', n);
+  },
   addDiamonds: (n) => { const player = { ...get().player, diamonds: Math.max(0, get().player.diamonds + n) }; set({ player }); saveToStorage(player); },
   addPaper: (n) => { const player = { ...get().player, paper: Math.max(0, get().player.paper + n) }; set({ player }); saveToStorage(player); },
   
@@ -82,21 +109,34 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
   updateSettings: (s) => { const player = { ...get().player, settings: { ...get().player.settings, ...s } }; set({ player }); saveToStorage(player); },
   markLoaded: () => set({ loaded: true }),
-  updateFleet: (fleet) => { const player = { ...get().player, fleet }; set({ player }); saveToStorage(player); },
+  updateFleet: (fleet) => { 
+    const player = { ...get().player, fleet }; 
+    set({ player }); saveToStorage(player); 
+    get().progressQuest('fold_ships', 1); // Квест на складывание
+    if (fleet.filter(s => s.templateId === 'battleship').length >= 3) get().unlockAchievement('fleet_3_battleships');
+  },
 
-  registerBusinessWin: (profit: number) => {
+  registerBusinessWin: (profit, wonVs3) => {
     const p = get().player;
     const newBusinessWins = p.businessWins + 1;
     const newCycles = p.cyclesDone + 1;
     let newLevel = p.level;
     if (newBusinessWins >= p.level && p.battleWins >= p.level && p.level < 12) newLevel = p.level + 1;
+    
     const player = { ...p, businessWins: newBusinessWins, cyclesDone: newCycles, coins: p.coins + Math.floor(profit * 0.1), paper: p.paper + Math.floor(Math.random() * 4) + 1, level: newLevel };
     set({ player }); saveToStorage(player);
+    
     get().unlockAchievement('first_business_win');
+    if (newBusinessWins >= 10) get().unlockAchievement('business_10');
+    if (newBusinessWins >= 25) get().unlockAchievement('business_25');
+    if (wonVs3) get().unlockAchievement('business_vs_3');
     if (newLevel >= 5) get().unlockAchievement('level_5');
+    if (newLevel >= 10) get().unlockAchievement('level_10');
+    
+    get().progressQuest('business_win', 1);
   },
 
-  registerBattleWin: () => {
+  registerBattleWin: (isBoss, flawless) => {
     const p = get().player;
     const roll = Math.random() * 100;
     let rarity: Rarity = 'simple';
@@ -106,7 +146,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     else if (roll >= 35) rarity = 'rare';
 
     const visasOfRarity = ALL_VISAS.filter(v => v.rarity === rarity);
-    let targetVisa = visasOfRarity.find(v => (p.visaPieces[v.id] || 0) < v.piecesRequired); // Используем piecesRequired!
+    let targetVisa = visasOfRarity.find(v => (p.visaPieces[v.id] || 0) < v.piecesRequired);
     
     let paperReward = 0;
     let newPieces = { ...p.visaPieces };
@@ -121,7 +161,6 @@ export const useGameStore = create<GameState>((set, get) => ({
         alert(`Вы получили кусок визитки: ${targetVisa.name}! (${newPieces[targetVisa.id]}/${targetVisa.piecesRequired})`);
       }
     } else {
-      // Если у всех визиток этой редкости уже собрано нужное количество кусков
       if (rarity === 'simple' || rarity === 'rare') paperReward = 1;
       else if (rarity === 'epic' || rarity === 'legendary') paperReward = 2;
       else paperReward = 3;
@@ -130,13 +169,59 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     const player = { ...p, battleWins: p.battleWins + 1, coins: p.coins + 50, paper: p.paper + paperReward, visaPieces: newPieces, visasOwned: newVisasOwned };
     set({ player }); saveToStorage(player);
+
     get().unlockAchievement('first_battle_win');
-    if (newVisasOwned.length >= 3) get().unlockAchievement('collector');
+    if (p.battleWins + 1 >= 10) get().unlockAchievement('battle_10');
+    if (p.battleWins + 1 >= 25) get().unlockAchievement('battle_25');
+    if (flawless) get().unlockAchievement('flawless_victory');
+    
+    if (isBoss) {
+      if (p.level === 3) get().unlockAchievement('boss_3');
+      if (p.level === 6) get().unlockAchievement('boss_6');
+      if (p.level === 9) get().unlockAchievement('boss_9');
+      if (p.level === 12) get().unlockAchievement('boss_12');
+    }
+
+    // Достижения за визитки
+    if (newVisasOwned.length >= 3) get().unlockAchievement('collector_1');
+    if (newVisasOwned.length >= 5) get().unlockAchievement('collector_2');
+    if (newVisasOwned.length >= 8) get().unlockAchievement('collector_3');
+    if (newVisasOwned.length >= 10) get().unlockAchievement('all_visas');
+    
+    const ownedRarities = newVisasOwned.map(id => ALL_VISAS.find(v => v.id === id)?.rarity);
+    if (ownedRarities.includes('rare')) get().unlockAchievement('rare_visa');
+    if (ownedRarities.includes('epic')) get().unlockAchievement('epic_visa');
+    if (ownedRarities.includes('legendary')) get().unlockAchievement('legendary_visa');
+    if (ownedRarities.includes('collection')) get().unlockAchievement('collection_visa');
+
+    get().progressQuest('battle_win', 1);
   },
 
   claimDailyBonus: (coins, paper) => {
     const today = new Date().toDateString();
-    const player = { ...get().player, coins: get().player.coins + coins, paper: get().player.paper + paper, lastLoginDate: today };
+    const p = get().player;
+    
+    // Стрик
+    const yesterday = new Date(Date.now() - 86400000).toDateString();
+    const newStreak = p.lastLoginDate === yesterday ? p.loginStreak + 1 : 1;
+    if (newStreak >= 5) get().unlockAchievement('daily_streak');
+
+    // Ежедневные квесты
+    let newQuests = p.dailyQuests;
+    let newQuestProgress = p.questProgress;
+    let newQuestsClaimed = p.questsClaimed;
+    
+    if (p.lastQuestDate !== today) {
+       newQuests = generateDailyQuests();
+       newQuestProgress = {};
+       newQuestsClaimed = [];
+    }
+
+    const player = { 
+      ...p, coins: p.coins + coins, paper: p.paper + paper, 
+      lastLoginDate: today, loginStreak: newStreak,
+      dailyQuests: newQuests, questProgress: newQuestProgress, questsClaimed: newQuestsClaimed, lastQuestDate: today
+    };
     set({ player }); saveToStorage(player);
   },
 
@@ -156,6 +241,7 @@ export const useGameStore = create<GameState>((set, get) => ({
        if (player.visaPieces[target.id] >= target.piecesRequired && !player.visasOwned.includes(target.id)) player.visasOwned.push(target.id);
     }
     set({ player }); saveToStorage(player);
+    get().progressQuest('spin_wheel', 1);
   },
 
   unlockAchievement: (id: string) => {
@@ -165,4 +251,59 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({ player }); saveToStorage(player);
     alert(`🏆 Достижение разблокировано: ${ach.title}!\nНаграда: ${ach.rewardCoins} монет.`);
   },
+
+  progressQuest: (type, amount) => {
+    const p = get().player;
+    if (!p.dailyQuests.length) return; // Квесты не сгенерированы (не заходил сегодня)
+
+    let changed = false;
+    const newProgress = { ...p.questProgress };
+    
+    p.dailyQuests.forEach(qId => {
+       const q = ALL_QUESTS.find(x => x.id === qId);
+       if (q && q.type === type) {
+           newProgress[qId] = (newProgress[qId] || 0) + amount;
+           changed = true;
+       }
+    });
+
+    if (changed) {
+        const player = { ...p, questProgress: newProgress };
+        set({ player }); saveToStorage(player);
+    }
+  },
+
+  claimQuestReward: (questId: string) => {
+     const p = get().player;
+     if (p.questsClaimed.includes(questId)) return;
+     const q = ALL_QUESTS.find(x => x.id === questId);
+     if (!q) return;
+     
+     const prog = p.questProgress[questId] || 0;
+     if (prog < q.target) return;
+
+     const newClaimed = [...p.questsClaimed, questId];
+     let newCoins = p.coins + q.rewardCoins;
+     
+     // Если все 5 квестов выполнены, даем кусок визитки
+     let newPieces = { ...p.visaPieces };
+     let newVisasOwned = [...p.visasOwned];
+     let alertMsg = `Выполнено: ${q.title}. Награда: ${q.rewardCoins} 🪙.`;
+
+     if (newClaimed.length === 5) {
+         const pool = ALL_VISAS.filter(v => v.rarity === 'rare' || v.rarity === 'epic');
+         const target = pool[Math.floor(Math.random() * pool.length)];
+         newPieces[target.id] = (newPieces[target.id] || 0) + 1;
+         if (newPieces[target.id] >= target.piecesRequired && !newVisasOwned.includes(target.id)) {
+             newVisasOwned.push(target.id);
+             alertMsg += `\n\n🌟 Все квесты выполнены! Вы получили визитку ${target.name}!`;
+         } else {
+             alertMsg += `\n\n🌟 Все квесты выполнены! Вы получили кусок визитки ${target.name} (${newPieces[target.id]}/${target.piecesRequired}).`;
+         }
+     }
+
+     const player = { ...p, coins: newCoins, questsClaimed: newClaimed, visaPieces: newPieces, visasOwned: newVisasOwned };
+     set({ player }); saveToStorage(player);
+     alert(alertMsg);
+  }
 }));

@@ -4,24 +4,28 @@ import { useBattleStore } from '../../state/battleStore';
 import { RectButton } from '../ui/RectButton';
 import { soundManager } from '../../audio/soundManager';
 import type { FleetShip } from '../../state/gameStore';
+import { getLevelData } from '../../data/progression';
 
 export function BattleResultsOverlay({ winner }: { winner: 'player' | 'bot' }) {
   const setScreen = useGameStore(s => s.setScreen);
   const registerBattleWin = useGameStore(s => s.registerBattleWin);
   const playerFleet = useBattleStore(s => s.playerFleet);
+  const botFleet = useBattleStore(s => s.botFleet);
   const updateFleet = useGameStore(s => s.updateFleet);
+  const playerLevel = useGameStore(s => s.player.level);
   
   const isPlayerWinner = winner === 'player';
+  const isBoss = getLevelData(playerLevel).isBoss;
 
   useEffect(() => {
     if (isPlayerWinner) {
       soundManager.win();
-      registerBattleWin();
+      const flawless = playerFleet.every(s => s.currentHp === s.maxHp);
+      registerBattleWin(isBoss, flawless);
     } else {
       soundManager.lose();
     }
 
-    // Сохраняем выживший флот
     const survivingShips: FleetShip[] = playerFleet
       .filter(s => s.currentHp > 0)
       .map(s => ({ id: s.id, templateId: s.templateId, maxHp: s.maxHp }));
@@ -29,9 +33,9 @@ export function BattleResultsOverlay({ winner }: { winner: 'player' | 'bot' }) {
     updateFleet(survivingShips);
 
     if (!isPlayerWinner) {
-      useGameStore.getState().addCoins(10); // Утешительный приз
+      useGameStore.getState().addCoins(10);
     }
-  }, [isPlayerWinner, registerBattleWin, playerFleet, updateFleet]);
+  }, [isPlayerWinner, registerBattleWin, playerFleet, updateFleet, isBoss]);
 
   return (
     <div className="overlay-backdrop">
@@ -48,7 +52,7 @@ export function BattleResultsOverlay({ winner }: { winner: 'player' | 'bot' }) {
           {isPlayerWinner ? (
             <>
               Награда: 50 монет <br/>
-              Выпал кусок визитки! (Проверьте галерею)
+              Выпал кусок визитки!
             </>
           ) : (
             <>

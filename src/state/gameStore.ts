@@ -26,8 +26,8 @@ export interface PlayerState {
   lastQuestDate: string;
 
   tutorialCompleted: boolean;
-  endings: string[]; // 'level_12', 'all_achievements', 'all_visas', 'true_ending'
-  activeEnding: string | null; // Для показа оверлея
+  endings: string[]; 
+  activeEnding: string | null; 
 }
 
 export interface GameState {
@@ -70,7 +70,15 @@ function loadFromStorage(): Partial<PlayerState> | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (parsed && parsed.version === 1 && parsed.player) {
-      return { ...DEFAULT_PLAYER, ...parsed.player };
+      let p = { ...DEFAULT_PLAYER, ...parsed.player };
+      
+      // Миграция: проверка разблокировки шаблонов по уровню
+      let updatedTemplates = [...p.unlockedTemplates];
+      if (p.level >= 4 && !updatedTemplates.includes('frigate')) updatedTemplates.push('frigate');
+      if (p.level >= 7 && !updatedTemplates.includes('battleship')) updatedTemplates.push('battleship');
+      p.unlockedTemplates = updatedTemplates;
+
+      return p;
     }
   } catch (e) {}
   return null;
@@ -150,9 +158,8 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     if (newBusinessWins >= p.level && p.battleWins >= p.level && p.level < 12) {
         newLevel = p.level + 1;
-        // Разблокировка шаблонов по уровням
-        if (newLevel === 4 && !newTemplates.includes('frigate')) newTemplates.push('frigate');
-        if (newLevel === 7 && !newTemplates.includes('battleship')) newTemplates.push('battleship');
+        if (newLevel >= 4 && !newTemplates.includes('frigate')) newTemplates.push('frigate');
+        if (newLevel >= 7 && !newTemplates.includes('battleship')) newTemplates.push('battleship');
         if (newLevel === 12) get().triggerEnding('level_12');
     }
     
@@ -175,7 +182,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (newLevel >= 10) get().unlockAchievement('level_10');
     
     get().progressQuest('business_win', 1);
-    get().progressQuest('earn_coins', Math.floor(profit * 0.1)); // Фикс квеста на монеты
+    get().progressQuest('earn_coins', Math.floor(profit * 0.1)); 
   },
 
   registerBattleWin: (isBoss, flawless) => {
@@ -220,19 +227,13 @@ export const useGameStore = create<GameState>((set, get) => ({
   claimDailyBonus: (coins, paper) => {
     const today = new Date().toDateString();
     const p = get().player;
-    
     const yesterday = new Date(Date.now() - 86400000).toDateString();
     const newStreak = p.lastLoginDate === yesterday ? p.loginStreak + 1 : 1;
     if (newStreak >= 5) get().unlockAchievement('daily_streak');
 
-    let newQuests = p.dailyQuests;
-    let newQuestProgress = p.questProgress;
-    let newQuestsClaimed = p.questsClaimed;
-    
+    let newQuests = p.dailyQuests, newQuestProgress = p.questProgress, newQuestsClaimed = p.questsClaimed;
     if (p.lastQuestDate !== today) {
-       newQuests = generateDailyQuests();
-       newQuestProgress = {};
-       newQuestsClaimed = [];
+       newQuests = generateDailyQuests(); newQuestProgress = {}; newQuestsClaimed = [];
     }
 
     const player = { 
@@ -265,36 +266,22 @@ export const useGameStore = create<GameState>((set, get) => ({
     const p = get().player; if (p.achievements.includes(id)) return;
     const ach = ACHIEVEMENTS[id]; if (!ach) return;
     const newAchievements = [...p.achievements, id];
-    
     const player = { ...p, achievements: newAchievements, coins: p.coins + ach.rewardCoins, diamonds: p.diamonds + (ach.rewardDiamonds || 0) };
     set({ player }); saveToStorage(player);
     alert(`🏆 Достижение разблокировано: ${ach.title}!\nНаграда: ${ach.rewardCoins} монет.`);
-
-    // Проверка на концовку всех достижений
-    if (newAchievements.length === ALL_ACHIEVEMENTS.length) {
-        get().triggerEnding('all_achievements');
-    }
+    if (newAchievements.length === ALL_ACHIEVEMENTS.length) get().triggerEnding('all_achievements');
   },
 
   progressQuest: (type, amount) => {
     const p = get().player;
     if (!p.dailyQuests.length) return;
-
     let changed = false;
     const newProgress = { ...p.questProgress };
-    
     p.dailyQuests.forEach(qId => {
        const q = ALL_QUESTS.find(x => x.id === qId);
-       if (q && q.type === type) {
-           newProgress[qId] = (newProgress[qId] || 0) + amount;
-           changed = true;
-       }
+       if (q && q.type === type) { newProgress[qId] = (newProgress[qId] || 0) + amount; changed = true; }
     });
-
-    if (changed) {
-        const player = { ...p, questProgress: newProgress };
-        set({ player }); saveToStorage(player);
-    }
+    if (changed) { const player = { ...p, questProgress: newProgress }; set({ player }); saveToStorage(player); }
   },
 
   claimQuestReward: (questId: string) => {
@@ -302,13 +289,11 @@ export const useGameStore = create<GameState>((set, get) => ({
      if (p.questsClaimed.includes(questId)) return;
      const q = ALL_QUESTS.find(x => x.id === questId);
      if (!q) return;
-     
      const prog = p.questProgress[questId] || 0;
      if (prog < q.target) return;
 
      const newClaimed = [...p.questsClaimed, questId];
      let newCoins = p.coins + q.rewardCoins;
-     
      let alertMsg = `Выполнено: ${q.title}. Награда: ${q.rewardCoins} 🪙.`;
 
      if (newClaimed.length === 5) {
@@ -331,16 +316,10 @@ export const useGameStore = create<GameState>((set, get) => ({
   triggerEnding: (endingId: string) => {
     const p = get().player;
     let newEndings = [...p.endings];
+    if (!newEndings.includes(endingId)) newEndings.push(endingId);
     
-    if (!newEndings.includes(endingId)) {
-        newEndings.push(endingId);
-    }
-    
-    // Проверка Истинной концовки
     if (newEndings.includes('level_12') && newEndings.includes('all_achievements') && newEndings.includes('all_visas')) {
-        if (!newEndings.includes('true_ending')) {
-            newEndings.push('true_ending');
-        }
+        if (!newEndings.includes('true_ending')) newEndings.push('true_ending');
     }
 
     const player = { ...p, endings: newEndings, activeEnding: endingId };

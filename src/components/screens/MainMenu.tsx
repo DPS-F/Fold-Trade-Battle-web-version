@@ -16,6 +16,7 @@ import { TutorialOverlay } from '../overlays/TutorialOverlay';
 import { EndingOverlay } from '../overlays/EndingOverlay';
 import { soundManager } from '../../audio/soundManager';
 import { RectButton } from '../ui/RectButton';
+import { BattlePassOverlay } from '../overlays/BattlePassOverlay';
 
 export function MainMenu() {
   const player = useGameStore(s => s.player);
@@ -107,6 +108,7 @@ export function MainMenu() {
 
       <div style={{ position: 'absolute', bottom: '5%', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 24 }}>
         <RoundButton icon="🎁" label="Награды" onClick={() => openOverlay('meta-rewards')} />
+        <RoundButton icon="🎫" label="Баттл-пасс" onClick={() => openOverlay('battle-pass')} />
         <RoundButton icon="🏆" label="Достижения" onClick={() => openOverlay('achievements')} />
         <RoundButton icon="📖" label="Документация" onClick={() => openOverlay('documentation')} />
         <RoundButton icon="💾" label="Сохранить" onClick={() => openOverlay('save-load')} />
@@ -131,6 +133,7 @@ export function MainMenu() {
       <LevelMapOverlay open={isOpen('level-map')} onClose={closeOverlay} />
       <TutorialOverlay open={isOpen('tutorial')} onClose={closeOverlay} />
       <EndingOverlay open={isOpen('ending')} onClose={closeOverlay} />
+      <BattlePassOverlay open={isOpen('battle-pass')} onClose={closeOverlay} />
     </div>
   );
 }

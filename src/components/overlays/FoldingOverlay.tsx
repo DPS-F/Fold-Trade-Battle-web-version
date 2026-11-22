@@ -69,7 +69,18 @@ export function FoldingOverlay({ open, onClose, templateId }: Props) {
           <p style={{ fontSize: 14, maxWidth: 400, margin: '0 auto 20px' }}>
             Вам нужно будет выполнить {boatData.steps.length} шагов по складыванию бумаги. Внимательно следуйте инструкциям.
           </p>
-          <button className="rect-btn" onClick={() => setIsStarted(true)} style={{ padding: '12px 30px', fontSize: 16 }}>
+          <button 
+            className="rect-btn" 
+            onClick={() => {
+              if (player.fleet.length >= 3) {
+                alert('Ваш флот укомплектован! Максимум 3 корабля. Отправляйтесь в бой или разберите старые.');
+                onClose();
+                return;
+              }
+              setIsStarted(true);
+            }} 
+            style={{ padding: '12px 30px', fontSize: 16 }}
+          >
             Начать складывание
           </button>
         </div>

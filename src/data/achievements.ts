@@ -49,6 +49,10 @@ export const ACHIEVEMENTS: Record<string, Achievement> = {
   daily_streak: { id: 'daily_streak', title: 'Постоянный клиент', description: 'Заберите ежедневный бонус 5 дней подряд.', rewardCoins: 500 },
   wheel_master: { id: 'wheel_master', title: 'Фортуна', description: 'Выиграйте на колесе фортуны 10 раз.', rewardCoins: 400 },
   master_craftsman: { id: 'master_craftsman', title: 'Мастер-оригамист', description: 'Сложите 20 кораблей.', rewardCoins: 1000, rewardDiamonds: 2 },
+
+  pinball_10: { id: 'pinball_10', title: 'Лунный маг', description: 'Забейте 10 шариков в лунку.', rewardCoins: 200 },
+  pinball_50: { id: 'pinball_50', title: 'Космический бильярд', description: 'Забейте 50 шариков в лунку.', rewardCoins: 500, rewardDiamonds: 2 },
+  pinball_100: { id: 'pinball_100', title: 'Гравитационный гений', description: 'Забейте 100 шариков в лунку.', rewardCoins: 1000, rewardDiamonds: 5 },
 };
 
 export const ALL_ACHIEVEMENTS = Object.values(ACHIEVEMENTS);

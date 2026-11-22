@@ -1,4 +1,4 @@
-export type QuestType = 'business_win' | 'battle_win' | 'earn_coins' | 'fold_ships' | 'close_visas' | 'spin_wheel';
+export type QuestType = 'business_win' | 'battle_win' | 'earn_coins' | 'fold_ships' | 'close_visas' | 'spin_wheel' | 'pinball_pocket';
 
 export interface QuestDef {
   id: string;
@@ -29,4 +29,7 @@ export const ALL_QUESTS: QuestDef[] = [
   { id: 'q18', type: 'battle_win', target: 5, title: 'Выиграйте 5 боёв', rewardCoins: 400 },
   { id: 'q19', type: 'earn_coins', target: 1000, title: 'Заработайте 1000 монет', rewardCoins: 300 },
   { id: 'q20', type: 'spin_wheel', target: 2, title: 'Покрутите колесо 2 раза', rewardCoins: 50 },
+  { id: 'q21', type: 'pinball_pocket', target: 1, title: 'Забейте 1 шарик в лунку', rewardCoins: 20 },
+  { id: 'q22', type: 'pinball_pocket', target: 3, title: 'Забейте 3 шарика в лунку', rewardCoins: 50 },
+  { id: 'q23', type: 'pinball_pocket', target: 5, title: 'Забейте 5 шариков в лунку', rewardCoins: 80 },
 ];

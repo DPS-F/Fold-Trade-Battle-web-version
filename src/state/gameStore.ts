@@ -3,10 +3,11 @@ import { ALL_VISAS } from '../data/visas';
 import type { Rarity } from '../data/types';
 import { ACHIEVEMENTS, ALL_ACHIEVEMENTS } from '../data/achievements';
 import { ALL_QUESTS, type QuestType } from '../data/quests';
+import { BATTLE_PASS_REWARDS } from '../data/battlePass';
 
 export interface FleetShip { id: string; templateId: string; maxHp: number; }
 export type Screen = 'loading' | 'main-menu' | 'business-prep' | 'business-battle' | 'battle-prep' | 'folding' | 'battle';
-export type OverlayId = 'profile' | 'documentation' | 'save-load' | 'feedback' | 'conversion' | 'settings' | 'visas-gallery' | 'rent-select' | 'my-visas' | 'market' | 'production' | 'templates-gallery' | 'folding-overlay' | 'battle-results' | 'business-results' | 'meta-rewards' | 'achievements' | 'level-map' | 'tutorial' | 'ending';
+export type OverlayId = 'profile' | 'documentation' | 'save-load' | 'feedback' | 'conversion' | 'settings' | 'visas-gallery' | 'rent-select' | 'my-visas' | 'market' | 'production' | 'templates-gallery' | 'folding-overlay' | 'battle-results' | 'business-results' | 'meta-rewards' | 'achievements' | 'level-map' | 'tutorial' | 'ending' | 'battle-pass';
 
 export interface PlayerSettings { musicVolume: number; sfxVolume: number; animations: boolean; uiScale: number; }
 
@@ -28,6 +29,11 @@ export interface PlayerState {
   tutorialCompleted: boolean;
   endings: string[]; 
   activeEnding: string | null; 
+
+  pinballPockets: number;
+  bpLevel: number;
+  bpClaimedLevels: number[];
+  tokenSkin: 'default' | 'silver' | 'gold';
 }
 
 export interface GameState {
@@ -45,6 +51,8 @@ export interface GameState {
   claimQuestReward: (questId: string) => void;
   finishTutorial: () => void;
   triggerEnding: (endingId: string) => void;
+  registerPinballPocket: () => void;
+  claimBPReward: (level: number) => void;
 }
 
 const DEFAULT_PLAYER: PlayerState = {
@@ -55,6 +63,7 @@ const DEFAULT_PLAYER: PlayerState = {
   lastLoginDate: '', lastWheelSpinDate: '', loginStreak: 0,
   dailyQuests: [], questProgress: {}, questsClaimed: [], lastQuestDate: '',
   tutorialCompleted: false, endings: [], activeEnding: null,
+  pinballPockets: 0, bpLevel: 0, bpClaimedLevels: [], tokenSkin: 'default',
 };
 
 const STORAGE_KEY = 'ftb-save-v1';
@@ -72,7 +81,6 @@ function loadFromStorage(): Partial<PlayerState> | null {
     if (parsed && parsed.version === 1 && parsed.player) {
       let p = { ...DEFAULT_PLAYER, ...parsed.player };
       
-      // Миграция: проверка разблокировки шаблонов по уровню
       let updatedTemplates = [...p.unlockedTemplates];
       if (p.level >= 4 && !updatedTemplates.includes('frigate')) updatedTemplates.push('frigate');
       if (p.level >= 7 && !updatedTemplates.includes('battleship')) updatedTemplates.push('battleship');
@@ -294,16 +302,20 @@ export const useGameStore = create<GameState>((set, get) => ({
 
      const newClaimed = [...p.questsClaimed, questId];
      let newCoins = p.coins + q.rewardCoins;
+     let newBpLevel = p.bpLevel;
      let alertMsg = `Выполнено: ${q.title}. Награда: ${q.rewardCoins} 🪙.`;
 
      if (newClaimed.length === 5) {
          const pool = ALL_VISAS.filter(v => v.rarity === 'rare' || v.rarity === 'epic');
          const target = pool[Math.floor(Math.random() * pool.length)];
          get().addVisaPiece(target.id, 1);
+         
+         if (newBpLevel < 14) newBpLevel += 1;
          alertMsg += `\n\n🌟 Все квесты выполнены! Вы получили кусок визитки ${target.name}.`;
+         alertMsg += `\n\n⚔️ Баттл-пасс повышен до уровня ${newBpLevel}!`;
      }
 
-     const player = { ...p, coins: newCoins, questsClaimed: newClaimed };
+     const player = { ...p, coins: newCoins, questsClaimed: newClaimed, bpLevel: newBpLevel };
      set({ player }); saveToStorage(player);
      alert(alertMsg);
   },
@@ -325,5 +337,49 @@ export const useGameStore = create<GameState>((set, get) => ({
     const player = { ...p, endings: newEndings, activeEnding: endingId };
     set({ player }); saveToStorage(player);
     get().openOverlay('ending');
+  },
+
+  registerPinballPocket: () => {
+    const p = get().player;
+    const newPockets = p.pinballPockets + 1;
+    const player = { ...p, pinballPockets: newPockets };
+    set({ player }); saveToStorage(player);
+
+    get().progressQuest('pinball_pocket', 1);
+
+    if (newPockets >= 10) get().unlockAchievement('pinball_10');
+    if (newPockets >= 50) get().unlockAchievement('pinball_50');
+    if (newPockets >= 100) get().unlockAchievement('pinball_100');
+  },
+
+  claimBPReward: (level: number) => {
+     const p = get().player;
+     if (p.bpLevel < level || p.bpClaimedLevels.includes(level)) return;
+     
+     const reward = BATTLE_PASS_REWARDS.find(r => r.level === level);
+     if (!reward) return;
+     
+     let newCoins = p.coins;
+     let newDiamonds = p.diamonds;
+     let newPaper = p.paper;
+     let newSkin = p.tokenSkin;
+     
+     if (reward.rewardType === 'coins') newCoins += reward.amount;
+     if (reward.rewardType === 'diamonds') newDiamonds += reward.amount;
+     if (reward.rewardType === 'paper') newPaper += reward.amount;
+     if (reward.rewardType === 'visaPiece') {
+         const pool = ALL_VISAS.filter(v => v.rarity === 'simple' || v.rarity === 'rare');
+         const target = pool[Math.floor(Math.random() * pool.length)];
+         get().addVisaPiece(target.id, reward.amount);
+     }
+     if (reward.rewardType === 'skin_silver') newSkin = 'silver';
+     if (reward.rewardType === 'skin_gold') newSkin = 'gold';
+
+     const player = { 
+         ...p, coins: newCoins, diamonds: newDiamonds, paper: newPaper,
+         tokenSkin: newSkin, bpClaimedLevels: [...p.bpClaimedLevels, level] 
+     };
+     set({ player }); saveToStorage(player);
+     alert(`Награда получена: ${reward.label}`);
   }
 }));

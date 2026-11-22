@@ -25,13 +25,12 @@ export function OrigamiViewer({ boat, onComplete, onFail }: Props) {
   useEffect(() => {
     if (!mountRef.current) return;
 
-    // 1. Инициализация сцены
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#2a1f1a'); // Темный фон стола
+    scene.background = new THREE.Color('#2a1f1a');
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(45, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 100);
-    camera.position.set(0, 0, 10); // Отодвинули камеру, чтобы лист было видно целиком
+    camera.position.set(0, 0, 10);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
@@ -39,7 +38,6 @@ export function OrigamiViewer({ boat, onComplete, onFail }: Props) {
     renderer.shadowMap.enabled = true;
     mountRef.current.appendChild(renderer.domElement);
 
-    // 2. Свет и тени
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
     
@@ -54,19 +52,19 @@ export function OrigamiViewer({ boat, onComplete, onFail }: Props) {
     backLight.position.set(-5, -5, -5);
     scene.add(backLight);
 
-    // 3. Деревянный стол (подложка)
     const tableGeo = new THREE.PlaneGeometry(30, 30);
     const tableMat = new THREE.MeshStandardMaterial({ color: '#5a3d2b', roughness: 1 });
     const table = new THREE.Mesh(tableGeo, tableMat);
     table.rotation.x = -Math.PI / 2;
-    table.position.y = -1;
+    table.position.y = -1.5;
     table.receiveShadow = true;
     scene.add(table);
 
-    // 4. Сама бумага
     const segments = 32;
     const geometry = new THREE.PlaneGeometry(boat.size[0], boat.size[1], segments, segments);
-    originalVertices.current = geometry.attributes.position.array.slice() as unknown as Float32Array;
+    
+    // ФИКС TS ОШИБКИ:
+    originalVertices.current = new Float32Array(geometry.attributes.position.array);
 
     const material = new THREE.MeshStandardMaterial({
       color: 0xfaf3e0,
@@ -78,7 +76,6 @@ export function OrigamiViewer({ boat, onComplete, onFail }: Props) {
     paper.castShadow = true;
     paper.receiveShadow = true;
     
-    // Тонкая обводка (сетка)
     const edges = new THREE.EdgesGeometry(geometry, 15);
     const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xccbbaa, transparent: true, opacity: 0.15 }));
     paper.add(line);
@@ -86,7 +83,6 @@ export function OrigamiViewer({ boat, onComplete, onFail }: Props) {
     scene.add(paper);
     paperRef.current = paper;
 
-    // 5. Анимация
     let reqId: number;
     const animate = () => {
       reqId = requestAnimationFrame(animate);
@@ -101,26 +97,31 @@ export function OrigamiViewer({ boat, onComplete, onFail }: Props) {
     };
   }, [boat]);
 
-  // Применение математики сгиба
   const applyFold = (step: FoldStep, progress: number) => {
     if (!paperRef.current || !originalVertices.current) return;
     const geo = paperRef.current.geometry;
     const positions = geo.attributes.position.array as Float32Array;
     
-    // Сброс к оригиналу
     for (let i = 0; i < positions.length; i++) positions[i] = originalVertices.current[i];
 
-    // Все прошлые шаги применяем на 100%
     for (let i = 0; i < currentStepIndex; i++) {
         rotateVertices(positions, boat.steps[i], 1);
     }
-    // Текущий шаг на progress
     if (progress > 0) {
         rotateVertices(positions, step, progress);
     }
 
     geo.attributes.position.needsUpdate = true;
     geo.computeVertexNormals();
+
+    // --- АВТОЦЕНТРИРОВАНИЕ ---
+    // Считаем новый центр масс и сдвигаем сам объект, чтобы он оставался в центре экрана
+    geo.computeBoundingBox();
+    if (geo.boundingBox) {
+       const center = new THREE.Vector3();
+       geo.boundingBox.getCenter(center);
+       paperRef.current.position.set(-center.x, -center.y, 0);
+    }
   };
 
   const rotateVertices = (positions: Float32Array, step: FoldStep, progress: number) => {
@@ -157,7 +158,6 @@ export function OrigamiViewer({ boat, onComplete, onFail }: Props) {
     }
   };
 
-  // --- ОБРАБОТКА DRAG ---
   const onPointerDown = (e: React.PointerEvent) => {
     if (currentStepIndex >= boat.steps.length) return;
     setIsDragging(true);
@@ -173,21 +173,18 @@ export function OrigamiViewer({ boat, onComplete, onFail }: Props) {
     const dy = e.clientY - dragStartRef.current.y;
     const distance = Math.sqrt(dx*dx + dy*dy);
 
-    if (distance < 15) return; // Мертвая зона
+    if (distance < 15) return;
 
-    // Вектор перемещения мыши (экранные координаты: Y вниз)
     const dragVec = new THREE.Vector2(dx, dy).normalize();
     const targetDir = new THREE.Vector2(step.dragDirection[0], step.dragDirection[1]).normalize();
     
     const dot = dragVec.dot(targetDir);
 
     if (dot > 0.5) {
-      // Правильное направление
-      const progress = Math.min(1, distance / 250); // 250 пикселей до полного сгиба
+      const progress = Math.min(1, distance / 250);
       setDragProgress(progress);
       applyFold(step, progress);
     } else if (dot < -0.5) {
-      // Неправильное направление (тянем в противоположную сторону)
       setMessage('Не туда! Тяните в указанном направлении.');
       setDragProgress(0);
       applyFold(step, 0);
@@ -201,7 +198,6 @@ export function OrigamiViewer({ boat, onComplete, onFail }: Props) {
     const step = boat.steps[currentStepIndex];
 
     if (dragProgress > 0.7) {
-      // Успех
       soundManager.stamp();
       applyFold(step, 1);
       setTimeout(() => {
@@ -214,7 +210,6 @@ export function OrigamiViewer({ boat, onComplete, onFail }: Props) {
         }
       }, 300);
     } else {
-      // Не дотянули или отпустили
       applyFold(step, 0);
       setDragProgress(0);
       
@@ -235,7 +230,6 @@ export function OrigamiViewer({ boat, onComplete, onFail }: Props) {
       soundManager.lose();
       onFail();
     } else {
-      // Визуальная тряска листа
       if (paperRef.current) {
         paperRef.current.position.x = 0.3;
         setTimeout(() => { if (paperRef.current) paperRef.current.position.x = -0.3; }, 50);
@@ -254,7 +248,6 @@ export function OrigamiViewer({ boat, onComplete, onFail }: Props) {
     >
       <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
       
-      {/* Верхняя панель: Инструкции */}
       <div style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', textAlign: 'center', background: 'rgba(250, 243, 224, 0.95)', padding: '12px 24px', borderRadius: 8, boxShadow: '0 4px 15px rgba(0,0,0,0.4)', width: '90%', maxWidth: 500 }}>
         <h3 style={{ margin: 0, fontFamily: 'var(--font-typewriter)', color: 'var(--burned)' }}>
           Шаг {currentStepIndex + 1} из {boat.steps.length}
@@ -264,7 +257,6 @@ export function OrigamiViewer({ boat, onComplete, onFail }: Props) {
         </p>
       </div>
 
-      {/* Нижняя панель: Прогресс и Ошибки */}
       <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: 'rgba(250, 243, 224, 0.95)', padding: '12px 24px', borderRadius: 8, boxShadow: '0 4px 15px rgba(0,0,0,0.4)', width: '90%', maxWidth: 400 }}>
         <div style={{ width: '100%', height: 8, background: '#ddd', borderRadius: 4, overflow: 'hidden' }}>
           <div style={{ height: '100%', width: `${dragProgress * 100}%`, background: 'var(--accent-blue)', transition: 'width 0.1s' }} />

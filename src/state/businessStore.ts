@@ -59,55 +59,68 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     const availableForBots = [...ALL_VISAS].filter(v => !playerVisas.includes(v.id));
     
     const botMemories: Record<string, BotMemory> = {};
+    const usedBotIds = new Set<string>();
 
-    for (let i = 0; i < botCount; i++) {
-      let botVisa = availableForBots.splice(0, 1)[0];
-      if (!botVisa) break;
-      
-      let botName = botVisa.name;
-      let selectedReq = botVisa.requires[0];
-      
-      if (playerVisas.length === 1) {
-          const pNeed = playerNeeds[0];
-          const pOut = playerOutputs[0];
-          if (botVisa.produces !== pNeed) {
-             const producer = availableForBots.find(v => v.produces === pNeed);
-             if (producer) {
-                 botVisa = producer;
-                 availableForBots.splice(availableForBots.indexOf(producer), 1);
-             }
-          }
-          if (!botVisa.requires.includes(pOut)) {
-             const donor = ALL_VISAS.find(v => v.requires.includes(pOut) && v.id !== botVisa.id);
-             if (donor) botName = `${donor.name} ${botVisa.name}`;
-             selectedReq = pOut;
-          } else {
-             selectedReq = pOut;
-          }
-      }
+    // --- НОВЫЙ АЛГОРИТМ ПОДБОРА БОТОВ ---
+    // 1. Сначала закрываем потребности игрока (по одной на каждую визитку)
+    for (const need of playerNeeds) {
+        let botVisa = availableForBots.find(v => v.produces === need && !usedBotIds.has(v.id));
+        if (botVisa) {
+            usedBotIds.add(botVisa.id);
+            let botName = botVisa.name;
+            let selectedReq = botVisa.requires[0];
+            
+            // Если бот не покупает твой товар, а у тебя 1-2 визитки — мутируем
+            if (playerVisas.length <= 2 && !botVisa.requires.some(r => playerOutputs.includes(r))) {
+                const pOut = playerOutputs[0];
+                const donor = ALL_VISAS.find(v => v.requires.includes(pOut) && v.id !== botVisa!.id);
+                if (donor) botName = `${donor.name} ${botVisa.name}`;
+                selectedReq = pOut;
+            } else {
+                // Иначе просто выбираем то, что нужно ему из твоих товаров
+                const match = botVisa.requires.find(r => playerOutputs.includes(r));
+                if (match) selectedReq = match;
+            }
 
-      const botId = `bot_${i}`;
-      botMemories[botId] = { grudge: {}, delayedCloseCount: 0 };
+            const botId = `bot_${players.length - 1}`;
+            botMemories[botId] = { grudge: {}, delayedCloseCount: 0 };
+            players.push({
+                id: botId, name: botName, isBot: true, scraps: 100, position: 0,
+                inventory: { [botVisa.produces]: 2 }, visas: [botVisa.id], closedVisas: [],
+                selectedRequirements: { [botVisa.id]: selectedReq }, role: null, roleHistory: [],
+            });
+        }
+    }
 
-      players.push({
-        id: botId, name: botName, isBot: true, scraps: 100, position: 0,
-        inventory: { [botVisa.produces]: 2 }, visas: [botVisa.id], closedVisas: [],
-        selectedRequirements: { [botVisa.id]: selectedReq }, 
-        role: null, roleHistory: [],
-      });
+    // 2. Добиваем оставшихся ботов, чтобы они покупали твой товар
+    while (players.length - 1 < botCount) {
+        let botVisa = availableForBots.find(v => !usedBotIds.has(v.id) && v.requires.some(r => playerOutputs.includes(r)));
+        if (!botVisa) botVisa = availableForBots.find(v => !usedBotIds.has(v.id)); // Фоллбек
+        
+        if (!botVisa) break;
+        usedBotIds.add(botVisa.id);
+        const selectedReq = botVisa.requires.find(r => playerOutputs.includes(r)) || botVisa.requires[0];
+        
+        const botId = `bot_${players.length - 1}`;
+        botMemories[botId] = { grudge: {}, delayedCloseCount: 0 };
+        players.push({
+            id: botId, name: botVisa.name, isBot: true, scraps: 100, position: 0,
+            inventory: { [botVisa.produces]: 2 }, visas: [botVisa.id], closedVisas: [],
+            selectedRequirements: { [botVisa.id]: selectedReq }, role: null, roleHistory: [],
+        });
     }
 
     set({ players, lots: [], storage: [], turnIndex: 0, phase: 'idle', lastRoll: 0, winnerId: null, turnCount: 0, roundCount: 0, botMemory: botMemories, log: ['Матч начался!'] });
     get().executeCell(); 
   },
 
+  // ... (rest of the file is the same as before, keeping executeCell, rollDice, etc.)
+  // (Copy the rest from the previous version, it's identical)
   rollDice: () => {
     const state = get();
     if (state.phase !== 'idle') return;
-
     const roll = Math.floor(Math.random() * 6) + 1;
     set({ phase: 'rolling', lastRoll: roll });
-
     setTimeout(() => {
       set({ phase: 'moving' });
       setTimeout(() => {
@@ -116,14 +129,12 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
         const oldPos = current.position;
         const newPos = (oldPos + roll) % BOARD.length;
         const wrapped = oldPos + roll >= BOARD.length;
-
         current.position = newPos;
         if (newPos === 0 || wrapped) {
           current.scraps += 100;
           get().addLog(`${current.name} прошел круг и получил 100 обрезков.`);
           if (current.id === 'player') set({ roundCount: state.roundCount + 1 });
         }
-
         set({ players, phase: 'action' });
         get().executeCell();
       }, 500);
@@ -132,18 +143,12 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
 
   executeCell: () => {
     const state = get();
-    
-    // 1. Обновление склада
     if (state.roundCount > 0 || (state.roundCount === 0 && state.storage.length === 0)) {
         const allReqs = state.players.flatMap(p => Object.values(p.selectedRequirements));
         const allOutputs = state.players.flatMap(p => p.visas.map(v => VISAS[v].produces));
         const criticalGoods = [...new Set(allReqs)].filter(r => !allOutputs.includes(r));
-
         const storageLots: Lot[] = [];
-        criticalGoods.forEach(g => {
-            storageLots.push({ id: `storage_crit_${g}`, sellerId: 'storage', goodId: g, amount: 2, price: GOODS[g].basePrice, isCritical: true });
-        });
-        
+        criticalGoods.forEach(g => { storageLots.push({ id: `storage_crit_${g}`, sellerId: 'storage', goodId: g, amount: 2, price: GOODS[g].basePrice, isCritical: true }); });
         const freeSlots = Math.max(3, Math.min(6, allReqs.length)) - storageLots.length;
         const normalGoods = [...new Set(allReqs)].filter(g => !criticalGoods.includes(g));
         for(let i=0; i<freeSlots; i++) {
@@ -152,8 +157,6 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
         }
         set({ storage: storageLots });
     }
-
-    // 2. Действие на клетке
     const current = state.players[state.turnIndex];
     const cell: CellType = BOARD[current.position];
 
@@ -170,51 +173,31 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
       else { current.scraps = 0; current.inventory = {}; }
       get().addLog(`${current.name} попал на штраф. Заплатил ${totalPenalty} или потерял товар.`);
       set({ players: [...state.players], phase: 'idle' }); get().endTurn();
-    
     } else if (cell === 'market' || cell === 'production') {
-      
-      // --- ИСПРАВЛЕНИЕ РОЛЕЙ ---
       if (cell === 'market') {
-        // Розыгрыш роли с антиповтором
         let newRole: 'buyer' | 'seller' = Math.random() > 0.5 ? 'buyer' : 'seller';
         const hist = current.roleHistory;
-        
-        // Если 2 предыдущие роли совпадают с новой, принудительно меняем
-        if (hist.length >= 2 && hist[hist.length - 1] === newRole && hist[hist.length - 2] === newRole) {
-            newRole = newRole === 'buyer' ? 'seller' : 'buyer';
-        }
-        
-        current.role = newRole;
-        current.roleHistory = [...hist, newRole].slice(-3); // Храним последние 3 роли
+        if (hist.length >= 2 && hist[hist.length - 1] === newRole && hist[hist.length - 2] === newRole) newRole = newRole === 'buyer' ? 'seller' : 'buyer';
+        current.role = newRole; current.roleHistory = [...hist, newRole].slice(-3);
         get().addLog(`${current.name} попал на рынок. Роль: ${newRole === 'buyer' ? 'Покупатель' : 'Продавец'}`);
       }
-
-      // Действие бота
       if (current.isBot) {
         const memory = state.botMemory[current.id] || { grudge: {}, delayedCloseCount: 0 };
         const action = decideBotAction(state, current, memory);
-        
         set({ botMemory: { ...state.botMemory, [current.id]: memory } });
-        
         const pIdx = state.players.findIndex(p => p.id === current.id);
         const newPlayers = [...state.players];
-
         if (action.type === 'CLOSE_VISA') {
            const visa = VISAS[action.visaId];
            const reqGood = current.selectedRequirements[action.visaId];
-           current.inventory[reqGood] -= visa.requiredAmount;
-           current.closedVisas.push(action.visaId);
+           current.inventory[reqGood] -= visa.requiredAmount; current.closedVisas.push(action.visaId);
            get().addLog(`${current.name} ЗАКРЫЛ ВИЗИТКУ ${visa.name}!`);
            set({ players: newPlayers });
-           if (current.closedVisas.length === current.visas.length) {
-               set({ phase: 'ended', winnerId: current.id });
-               return;
-           }
+           if (current.closedVisas.length === current.visas.length) { set({ phase: 'ended', winnerId: current.id }); return; }
         } else if (action.type === 'BUY') {
            const lot = [...state.lots, ...state.storage].find(l => l.id === action.lotId);
            if (lot) {
-              current.scraps -= lot.price;
-              current.inventory[lot.goodId] = (current.inventory[lot.goodId] || 0) + lot.amount;
+              current.scraps -= lot.price; current.inventory[lot.goodId] = (current.inventory[lot.goodId] || 0) + lot.amount;
               get().addLog(`${current.name} купил ${GOODS[lot.goodId].name} x${lot.amount} за ${lot.price} 🪙.`);
               if (lot.sellerId === 'storage') set({ storage: state.storage.filter(l => l.id !== lot.id) });
               else {
@@ -231,18 +214,14 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
            const visa = VISAS[action.visaId];
            const p = GOODS[visa.produces].basePrice;
            const cost = action.amount === 2 ? Math.floor(p * 0.25) : action.amount === 3 ? Math.floor(p * 0.75) : 0;
-           current.scraps -= cost;
-           current.inventory[visa.produces] = (current.inventory[visa.produces] || 0) + action.amount;
+           current.scraps -= cost; current.inventory[visa.produces] = (current.inventory[visa.produces] || 0) + action.amount;
            get().addLog(`${current.name} произвел ${GOODS[visa.produces].name} x${action.amount}.`);
         } else {
            get().addLog(`${current.name} пропустил ход.`);
         }
-
         set({ players: newPlayers, phase: 'idle' });
         setTimeout(() => get().endTurn(), 1000); 
-      
       } else {
-        // Для игрока просто обновляем стейт, чтобы UI открыл оверлей с новой ролью
         set({ players: [...state.players] });
       }
     }
@@ -252,7 +231,6 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     const state = get();
     const winner = state.players.find(p => p.visas.length > 0 && p.closedVisas.length === p.visas.length);
     if (winner) { set({ phase: 'ended', winnerId: winner.id }); return; }
-
     const nextIndex = (state.turnIndex + 1) % state.players.length;
     set({ turnIndex: nextIndex, phase: 'idle', turnCount: state.turnCount + 1, log: [] }); 
     if (state.players[nextIndex].isBot) setTimeout(() => get().rollDice(), 1000);
@@ -263,17 +241,10 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     let lot = state.lots.find(l => l.id === lotId);
     let isStorage = false;
     if (!lot) { lot = state.storage.find(l => l.id === lotId); isStorage = true; }
-    
     const buyer = state.players[state.turnIndex];
     if (!lot || buyer.scraps < lot.price || buyer.isBot || lot.sellerId === buyer.id) return false;
-
-    if (isStorage && lot.amount > 3) {
-        alert("Со склада можно купить не более 3 единиц!");
-        return false;
-    }
-
+    if (isStorage && lot.amount > 3) { alert("Со склада можно купить не более 3 единиц!"); return false; }
     buyer.scraps -= lot.price; buyer.inventory[lot.goodId] = (buyer.inventory[lot.goodId] || 0) + lot.amount;
-
     if (isStorage) set({ players: [...state.players], storage: state.storage.filter(l => l.id !== lotId) });
     else {
         const seller = state.players.find(p => p.id === lot.sellerId);
@@ -289,7 +260,6 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     if (amount > 5 || (player.inventory[goodId] || 0) < amount) return false;
     const basePrice = GOODS[goodId].basePrice;
     if (totalPrice < basePrice * 0.5 * amount || totalPrice > basePrice * 1.5 * amount) return false;
-
     player.inventory[goodId] -= amount;
     set({ players: [...state.players], lots: [...state.lots, { id: `lot_${Date.now()}`, sellerId: player.id, goodId, amount, price: totalPrice }] });
     get().endTurn(); return true;
@@ -300,11 +270,9 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     const player = state.players[state.turnIndex];
     const visa = VISAS[visaId];
     if (!visa) return false;
-    
     const p = GOODS[visa.produces].basePrice;
     let cost = amount === 2 ? Math.floor(p * 0.25) : amount === 3 ? Math.floor(p * 0.75) : 0;
     if (player.scraps < cost) return false;
-
     player.scraps -= cost; player.inventory[visa.produces] = (player.inventory[visa.produces] || 0) + amount;
     set({ players: [...state.players] }); get().endTurn(); return true;
   },
@@ -314,21 +282,16 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     const player = state.players[state.turnIndex];
     const visa = VISAS[visaId];
     const reqGood = player.selectedRequirements[visaId];
-    
     if ((player.inventory[reqGood] || 0) < visa.requiredAmount) return false;
-
     player.inventory[reqGood] -= visa.requiredAmount; player.closedVisas.push(visaId);
-    
     player.scraps += 100;
     if (player.id === 'player') {
         useGameStore.getState().addVisaPiece(visaId, 1);
         alert(`Визитка закрыта! Вы получили 100 обрезков и кусок визитки.`);
     }
-
     set({ players: [...state.players] });
     if (player.closedVisas.length === player.visas.length) set({ phase: 'ended', winnerId: player.id });
     else get().endTurn();
-    
     return true;
   },
 }));

@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 import { ALL_VISAS } from '../data/visas';
 import type { Rarity } from '../data/types';
-import { ACHIEVEMENTS } from '../data/achievements';
+import { ACHIEVEMENTS, ALL_ACHIEVEMENTS } from '../data/achievements';
 import { ALL_QUESTS, type QuestType } from '../data/quests';
 
 export interface FleetShip { id: string; templateId: string; maxHp: number; }
 export type Screen = 'loading' | 'main-menu' | 'business-prep' | 'business-battle' | 'battle-prep' | 'folding' | 'battle';
-export type OverlayId = 'profile' | 'documentation' | 'save-load' | 'feedback' | 'conversion' | 'settings' | 'visas-gallery' | 'rent-select' | 'my-visas' | 'market' | 'production' | 'templates-gallery' | 'folding-overlay' | 'battle-results' | 'business-results' | 'meta-rewards' | 'achievements';
+export type OverlayId = 'profile' | 'documentation' | 'save-load' | 'feedback' | 'conversion' | 'settings' | 'visas-gallery' | 'rent-select' | 'my-visas' | 'market' | 'production' | 'templates-gallery' | 'folding-overlay' | 'battle-results' | 'business-results' | 'meta-rewards' | 'achievements' | 'level-map' | 'tutorial' | 'ending';
 
 export interface PlayerSettings { musicVolume: number; sfxVolume: number; animations: boolean; uiScale: number; }
 
@@ -24,6 +24,10 @@ export interface PlayerState {
   questProgress: Record<string, number>;
   questsClaimed: string[];
   lastQuestDate: string;
+
+  tutorialCompleted: boolean;
+  endings: string[]; // 'level_12', 'all_achievements', 'all_visas', 'true_ending'
+  activeEnding: string | null; // Для показа оверлея
 }
 
 export interface GameState {
@@ -31,7 +35,6 @@ export interface GameState {
   setScreen: (s: Screen) => void; openOverlay: (o: OverlayId) => void; closeOverlay: () => void; closeAllOverlays: () => void;
   setPlayerName: (name: string) => void; setPlayerGender: (g: 'male' | 'female') => void;
   addCoins: (n: number) => void; addDiamonds: (n: number) => void; addPaper: (n: number) => void;
-  // Добавлен интерфейс addVisaPiece:
   addVisaPiece: (visaId: string, amount: number) => void;
   convertCoinsToDiamonds: () => boolean; convertDiamondsToCoins: () => boolean;
   updateSettings: (s: Partial<PlayerSettings>) => void; markLoaded: () => void;
@@ -40,6 +43,8 @@ export interface GameState {
   spinWheel: (rewardType: string, amount: number) => void; unlockAchievement: (id: string) => void;
   progressQuest: (type: QuestType, amount: number) => void;
   claimQuestReward: (questId: string) => void;
+  finishTutorial: () => void;
+  triggerEnding: (endingId: string) => void;
 }
 
 const DEFAULT_PLAYER: PlayerState = {
@@ -49,6 +54,7 @@ const DEFAULT_PLAYER: PlayerState = {
   achievements: [], fleet: [], settings: { musicVolume: 0.35, sfxVolume: 0.6, animations: true, uiScale: 1 },
   lastLoginDate: '', lastWheelSpinDate: '', loginStreak: 0,
   dailyQuests: [], questProgress: {}, questsClaimed: [], lastQuestDate: '',
+  tutorialCompleted: false, endings: [], activeEnding: null,
 };
 
 const STORAGE_KEY = 'ftb-save-v1';
@@ -89,6 +95,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   setPlayerName: (name) => { const player = { ...get().player, name: name.slice(0, 20) }; set({ player }); saveToStorage(player); },
   setPlayerGender: (gender) => { const player = { ...get().player, gender }; set({ player }); saveToStorage(player); },
+  
   addCoins: (n) => { 
     const player = { ...get().player, coins: Math.max(0, get().player.coins + n) }; 
     set({ player }); saveToStorage(player); 
@@ -104,8 +111,11 @@ export const useGameStore = create<GameState>((set, get) => ({
     pieces[visaId] = (pieces[visaId] || 0) + amount;
     let newVisasOwned = [...p.visasOwned];
     const visa = ALL_VISAS.find(v => v.id === visaId);
+    
     if (visa && pieces[visaId] >= visa.piecesRequired && !newVisasOwned.includes(visaId)) {
        newVisasOwned.push(visaId);
+       alert(`Вы собрали новую визитку: ${visa.name}!`);
+       if (newVisasOwned.length === 10) get().triggerEnding('all_visas');
     }
     const player = { ...p, visaPieces: pieces, visasOwned: newVisasOwned };
     set({ player }); saveToStorage(player);
@@ -123,6 +133,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
   updateSettings: (s) => { const player = { ...get().player, settings: { ...get().player.settings, ...s } }; set({ player }); saveToStorage(player); },
   markLoaded: () => set({ loaded: true }),
+  
   updateFleet: (fleet) => { 
     const player = { ...get().player, fleet }; 
     set({ player }); saveToStorage(player); 
@@ -135,9 +146,25 @@ export const useGameStore = create<GameState>((set, get) => ({
     const newBusinessWins = p.businessWins + 1;
     const newCycles = p.cyclesDone + 1;
     let newLevel = p.level;
-    if (newBusinessWins >= p.level && p.battleWins >= p.level && p.level < 12) newLevel = p.level + 1;
+    let newTemplates = [...p.unlockedTemplates];
+
+    if (newBusinessWins >= p.level && p.battleWins >= p.level && p.level < 12) {
+        newLevel = p.level + 1;
+        // Разблокировка шаблонов по уровням
+        if (newLevel === 4 && !newTemplates.includes('frigate')) newTemplates.push('frigate');
+        if (newLevel === 7 && !newTemplates.includes('battleship')) newTemplates.push('battleship');
+        if (newLevel === 12) get().triggerEnding('level_12');
+    }
     
-    const player = { ...p, businessWins: newBusinessWins, cyclesDone: newCycles, coins: p.coins + Math.floor(profit * 0.1), paper: p.paper + Math.floor(Math.random() * 4) + 1, level: newLevel };
+    const player = { 
+        ...p, 
+        businessWins: newBusinessWins, 
+        cyclesDone: newCycles, 
+        coins: p.coins + Math.floor(profit * 0.1), 
+        paper: p.paper + Math.floor(Math.random() * 4) + 1, 
+        level: newLevel,
+        unlockedTemplates: newTemplates
+    };
     set({ player }); saveToStorage(player);
     
     get().unlockAchievement('first_business_win');
@@ -148,12 +175,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (newLevel >= 10) get().unlockAchievement('level_10');
     
     get().progressQuest('business_win', 1);
+    get().progressQuest('earn_coins', Math.floor(profit * 0.1)); // Фикс квеста на монеты
   },
 
   registerBattleWin: (isBoss, flawless) => {
     const p = get().player;
     
-    // Шанс фрагмента 75%
     if (Math.random() <= 0.75) {
         const roll = Math.random() * 100;
         let rarity: Rarity = 'simple';
@@ -168,8 +195,6 @@ export const useGameStore = create<GameState>((set, get) => ({
         if (targetVisa) {
           get().addVisaPiece(targetVisa.id, 1);
           alert(`Вы получили кусок визитки: ${targetVisa.name}!`);
-        } else {
-          alert(`Все визитки этой редкости открыты!`);
         }
     }
 
@@ -189,6 +214,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
 
     get().progressQuest('battle_win', 1);
+    get().progressQuest('earn_coins', 50);
   },
 
   claimDailyBonus: (coins, paper) => {
@@ -229,8 +255,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (rewardType === 'visaPiece') {
        const pool = ALL_VISAS.filter(v => v.rarity === 'simple' || v.rarity === 'rare');
        const target = pool[Math.floor(Math.random() * pool.length)];
-       player.visaPieces[target.id] = (player.visaPieces[target.id] || 0) + 1;
-       if (player.visaPieces[target.id] >= target.piecesRequired && !player.visasOwned.includes(target.id)) player.visasOwned.push(target.id);
+       get().addVisaPiece(target.id, 1);
     }
     set({ player }); saveToStorage(player);
     get().progressQuest('spin_wheel', 1);
@@ -239,9 +264,16 @@ export const useGameStore = create<GameState>((set, get) => ({
   unlockAchievement: (id: string) => {
     const p = get().player; if (p.achievements.includes(id)) return;
     const ach = ACHIEVEMENTS[id]; if (!ach) return;
-    const player = { ...p, achievements: [...p.achievements, id], coins: p.coins + ach.rewardCoins, diamonds: p.diamonds + (ach.rewardDiamonds || 0) };
+    const newAchievements = [...p.achievements, id];
+    
+    const player = { ...p, achievements: newAchievements, coins: p.coins + ach.rewardCoins, diamonds: p.diamonds + (ach.rewardDiamonds || 0) };
     set({ player }); saveToStorage(player);
     alert(`🏆 Достижение разблокировано: ${ach.title}!\nНаграда: ${ach.rewardCoins} монет.`);
+
+    // Проверка на концовку всех достижений
+    if (newAchievements.length === ALL_ACHIEVEMENTS.length) {
+        get().triggerEnding('all_achievements');
+    }
   },
 
   progressQuest: (type, amount) => {
@@ -277,24 +309,42 @@ export const useGameStore = create<GameState>((set, get) => ({
      const newClaimed = [...p.questsClaimed, questId];
      let newCoins = p.coins + q.rewardCoins;
      
-     let newPieces = { ...p.visaPieces };
-     let newVisasOwned = [...p.visasOwned];
      let alertMsg = `Выполнено: ${q.title}. Награда: ${q.rewardCoins} 🪙.`;
 
      if (newClaimed.length === 5) {
          const pool = ALL_VISAS.filter(v => v.rarity === 'rare' || v.rarity === 'epic');
          const target = pool[Math.floor(Math.random() * pool.length)];
-         newPieces[target.id] = (newPieces[target.id] || 0) + 1;
-         if (newPieces[target.id] >= target.piecesRequired && !newVisasOwned.includes(target.id)) {
-             newVisasOwned.push(target.id);
-             alertMsg += `\n\n🌟 Все квесты выполнены! Вы получили визитку ${target.name}!`;
-         } else {
-             alertMsg += `\n\n🌟 Все квесты выполнены! Вы получили кусок визитки ${target.name} (${newPieces[target.id]}/${target.piecesRequired}).`;
-         }
+         get().addVisaPiece(target.id, 1);
+         alertMsg += `\n\n🌟 Все квесты выполнены! Вы получили кусок визитки ${target.name}.`;
      }
 
-     const player = { ...p, coins: newCoins, questsClaimed: newClaimed, visaPieces: newPieces, visasOwned: newVisasOwned };
+     const player = { ...p, coins: newCoins, questsClaimed: newClaimed };
      set({ player }); saveToStorage(player);
      alert(alertMsg);
+  },
+
+  finishTutorial: () => {
+    const player = { ...get().player, tutorialCompleted: true };
+    set({ player }); saveToStorage(player);
+  },
+
+  triggerEnding: (endingId: string) => {
+    const p = get().player;
+    let newEndings = [...p.endings];
+    
+    if (!newEndings.includes(endingId)) {
+        newEndings.push(endingId);
+    }
+    
+    // Проверка Истинной концовки
+    if (newEndings.includes('level_12') && newEndings.includes('all_achievements') && newEndings.includes('all_visas')) {
+        if (!newEndings.includes('true_ending')) {
+            newEndings.push('true_ending');
+        }
+    }
+
+    const player = { ...p, endings: newEndings, activeEnding: endingId };
+    set({ player }); saveToStorage(player);
+    get().openOverlay('ending');
   }
 }));

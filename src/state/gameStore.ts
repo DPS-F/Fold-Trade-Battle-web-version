@@ -43,6 +43,7 @@ export interface GameState {
   addCoins: (n: number) => void; addDiamonds: (n: number) => void; addPaper: (n: number) => void;
   addVisaPiece: (visaId: string, amount: number) => void;
   convertCoinsToDiamonds: () => boolean; convertDiamondsToCoins: () => boolean;
+  checkRetroactiveAchievements: () => void;
   updateSettings: (s: Partial<PlayerSettings>) => void; markLoaded: () => void;
   registerBusinessWin: (profit: number, wonVs3: boolean) => void; registerBattleWin: (isBoss: boolean, flawless: boolean) => void;
   updateFleet: (fleet: FleetShip[]) => void; claimDailyBonus: (coins: number, paper: number) => void;
@@ -148,8 +149,10 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({ player }); saveToStorage(player); return true;
   },
   updateSettings: (s) => { const player = { ...get().player, settings: { ...get().player.settings, ...s } }; set({ player }); saveToStorage(player); },
-  markLoaded: () => set({ loaded: true }),
-  
+  markLoaded: () => {
+    set({ loaded: true });
+    get().checkRetroactiveAchievements();
+  },
   updateFleet: (fleet) => { 
     const player = { ...get().player, fleet }; 
     set({ player }); saveToStorage(player); 
@@ -381,5 +384,42 @@ export const useGameStore = create<GameState>((set, get) => ({
      };
      set({ player }); saveToStorage(player);
      alert(`Награда получена: ${reward.label}`);
-  }
+  },
+  checkRetroactiveAchievements: () => {
+    const p = get().player;
+    
+    // Визитки
+    if (p.visasOwned.length >= 3) get().unlockAchievement('collector_1');
+    if (p.visasOwned.length >= 5) get().unlockAchievement('collector_2');
+    if (p.visasOwned.length >= 8) get().unlockAchievement('collector_3');
+    if (p.visasOwned.length === 10) get().unlockAchievement('all_visas');
+    
+    const ownedRarities = p.visasOwned.map(id => ALL_VISAS.find(v => v.id === id)?.rarity);
+    if (ownedRarities.includes('rare')) get().unlockAchievement('rare_visa');
+    if (ownedRarities.includes('epic')) get().unlockAchievement('epic_visa');
+    if (ownedRarities.includes('legendary')) get().unlockAchievement('legendary_visa');
+    if (ownedRarities.includes('collection')) get().unlockAchievement('collection_visa');
+
+    // Шаблоны
+    if (p.unlockedTemplates.includes('frigate')) get().unlockAchievement('unlock_frigate');
+    if (p.unlockedTemplates.includes('battleship')) get().unlockAchievement('unlock_battleship');
+
+    // Уровни
+    if (p.level >= 5) get().unlockAchievement('level_5');
+    if (p.level >= 10) get().unlockAchievement('level_10');
+
+    // Бои
+    if (p.battleWins >= 10) get().unlockAchievement('battle_10');
+    if (p.battleWins >= 25) get().unlockAchievement('battle_25');
+
+    // Экономика
+    if (p.businessWins >= 10) get().unlockAchievement('business_10');
+    if (p.businessWins >= 25) get().unlockAchievement('business_25');
+    if (p.coins >= 1000) get().unlockAchievement('rich_man');
+    
+    // Пинбол
+    if (p.pinballPockets >= 10) get().unlockAchievement('pinball_10');
+    if (p.pinballPockets >= 50) get().unlockAchievement('pinball_50');
+    if (p.pinballPockets >= 100) get().unlockAchievement('pinball_100');
+  },
 }));

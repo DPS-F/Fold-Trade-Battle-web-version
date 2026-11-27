@@ -42,7 +42,6 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
   addLog: (msg) => set(state => ({ log: [...state.log, msg] })),
 
   startMatch: (playerVisas, botCount) => {
-    // ... (оставляем старую логику старта)
     const pReqs: Record<string, string> = {};
     playerVisas.forEach(vId => {
         const visa = VISAS[vId];
@@ -114,7 +113,6 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     const state = get();
     if (state.phase !== 'idle') return;
 
-
     const roll = Math.floor(Math.random() * 6) + 1;
     set({ phase: 'rolling', lastRoll: roll });
 
@@ -141,9 +139,9 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
   },
 
   executeCell: () => {
-    // ... (оставляем логику executeCell без изменений, она работает исправно)
     const state = get();
     
+    // 1. Обновление склада
     if (state.roundCount > 0 || (state.roundCount === 0 && state.storage.length === 0)) {
         const allReqs = state.players.flatMap(p => Object.values(p.selectedRequirements));
         const allOutputs = state.players.flatMap(p => p.visas.map(v => VISAS[v].produces));
@@ -164,37 +162,16 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     }
 
     const current = state.players[state.turnIndex];
-    const cell: CellType = BOARD[current.position];
-
-    if (cell === 'start') {
-      set({ players: [...state.players], phase: 'idle' }); get().endTurn();
-    } else if (cell === 'walk') {
-      set({ phase: 'idle' }); get().endTurn();
-    } else if (cell === 'penalty') {
-      let totalPenalty = 0;
-      Object.entries(current.inventory).forEach(([goodId, amount]) => {
-        if (amount > 0) totalPenalty += Math.floor(GOODS[goodId].basePrice * 0.25 * amount);
-      });
-      if (current.scraps >= totalPenalty) current.scraps -= totalPenalty;
-      else { current.scraps = 0; current.inventory = {}; }
-      get().addLog(`${current.name} попал на штраф. Заплатил ${totalPenalty} или потерял товар.`);
-      set({ players: [...state.players], phase: 'idle' }); get().endTurn();
-    } else if (cell === 'market' || cell === 'production') {
-      if (cell === 'market') {
-        let newRole: 'buyer' | 'seller' = Math.random() > 0.5 ? 'buyer' : 'seller';
-        const hist = current.roleHistory;
-        if (hist.length >= 2 && hist[hist.length - 1] === newRole && hist[hist.length - 2] === newRole) newRole = newRole === 'buyer' ? 'seller' : 'buyer';
-        current.role = newRole; current.roleHistory = [...hist, newRole].slice(-3);
-        get().addLog(`${current.name} попал на рынок. Роль: ${newRole === 'buyer' ? 'Покупатель' : 'Продавец'}`);
-      }
-
-      if (current.isBot) {
+    
+    // 2. ЛОГИКА БОТА (Вызывается ДО проверки клетки!)
+    if (current.isBot) {
         const memory = state.botMemory[current.id] || { grudge: {}, delayedCloseCount: 0 };
         const action = decideBotAction(state, current, memory);
+        
         set({ botMemory: { ...state.botMemory, [current.id]: memory } });
         
-        const pIdx = state.players.findIndex(p => p.id === current.id);
         const newPlayers = [...state.players];
+        let delay = 1000;
 
         if (action.type === 'CLOSE_VISA') {
            const visa = VISAS[action.visaId];
@@ -232,17 +209,40 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
            current.inventory[visa.produces] = (current.inventory[visa.produces] || 0) + action.amount;
            get().addLog(`${current.name} произвел ${GOODS[visa.produces].name} x${action.amount}.`);
         } else {
-           get().addLog(`${current.name} пропустил ход.`);
+           get().addLog(`${current.name} подумал и пропустил ход.`);
+           delay = 500;
         }
 
         set({ players: newPlayers, phase: 'idle' });
-        setTimeout(() => get().endTurn(), 1000); 
-      } else {
-        if (cell === 'market' && !current.role) {
-          current.role = Math.random() > 0.5 ? 'buyer' : 'seller';
-          set({ players: [...state.players] });
-        }
+        setTimeout(() => get().endTurn(), delay); 
+        return; // ВАЖНО: Выходим, чтобы не выполнять логику клеток для бота!
+    }
+
+    // 3. ЛОГИКА ИГРОКА (если current.isBot === false)
+    const cell: CellType = BOARD[current.position];
+
+    if (cell === 'start') {
+      set({ players: [...state.players], phase: 'idle' }); get().endTurn();
+    } else if (cell === 'walk') {
+      set({ phase: 'idle' }); get().endTurn();
+    } else if (cell === 'penalty') {
+      let totalPenalty = 0;
+      Object.entries(current.inventory).forEach(([goodId, amount]) => {
+        if (amount > 0) totalPenalty += Math.floor(GOODS[goodId].basePrice * 0.25 * amount);
+      });
+      if (current.scraps >= totalPenalty) current.scraps -= totalPenalty;
+      else { current.scraps = 0; current.inventory = {}; }
+      get().addLog(`${current.name} попал на штраф. Заплатил ${totalPenalty} или потерял товар.`);
+      set({ players: [...state.players], phase: 'idle' }); get().endTurn();
+    } else if (cell === 'market' || cell === 'production') {
+      if (cell === 'market') {
+        let newRole: 'buyer' | 'seller' = Math.random() > 0.5 ? 'buyer' : 'seller';
+        const hist = current.roleHistory;
+        if (hist.length >= 2 && hist[hist.length - 1] === newRole && hist[hist.length - 2] === newRole) newRole = newRole === 'buyer' ? 'seller' : 'buyer';
+        current.role = newRole; current.roleHistory = [...hist, newRole].slice(-3);
+        get().addLog(`${current.name} попал на рынок. Роль: ${newRole === 'buyer' ? 'Покупатель' : 'Продавец'}`);
       }
+      set({ players: [...state.players] }); // Открываем оверлей через UI
     }
   },
 
@@ -252,21 +252,18 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     if (winner) { set({ phase: 'ended', winnerId: winner.id }); return; }
 
     const nextIndex = (state.turnIndex + 1) % state.players.length;
-    
-    // Очищаем лог только если ход переходит от игрока (0) к боту
     const shouldClearLog = state.turnIndex === 0;
 
     set({ 
       turnIndex: nextIndex, 
       phase: 'idle', 
       turnCount: state.turnCount + 1,
-      log: shouldClearLog ? [] : state.log // Очищаем при переходе хода от игрока
+      log: shouldClearLog ? [] : state.log
     }); 
     
     if (state.players[nextIndex].isBot) setTimeout(() => get().rollDice(), 1000);
   },
 
-  // ... (buyLot, createLot, produce, closeVisa остаются без изменений)
   buyLot: (lotId) => {
     const state = get();
     let lot = state.lots.find(l => l.id === lotId);
@@ -330,8 +327,10 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     
     player.scraps += 100;
     if (player.id === 'player') {
-        useGameStore.getState().addVisaPiece(visaId, 1);
-        alert(`Визитка закрыта! Вы получили 100 обрезков и кусок визитки.`);
+        // Убрали выдачу куска визитки отсюда (куски даются только за бой и квесты)
+        alert(`Визитка закрыта! Вы получили 100 обрезков.`);
+        useGameStore.getState().unlockAchievement('close_visa');
+        useGameStore.getState().progressQuest('close_visas', 1);
     }
 
     set({ players: [...state.players] });

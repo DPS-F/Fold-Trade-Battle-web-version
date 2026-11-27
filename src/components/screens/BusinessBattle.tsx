@@ -166,8 +166,31 @@ export function BusinessBattle() {
               </div>
             );
           })}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 5 }}>
-            {phase === 'rolling' ? <motion.div animate={{ rotate: 360 }} style={{ width: 60, height: 60, background: 'white', border: '2px solid var(--burned)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30 }}>{lastRoll}</motion.div> : <button className="round-btn" style={{ width: 80, height: 80 }} onClick={rollDice} disabled={!isPlayerTurn || phase !== 'idle'}>Бросок</button>}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 5, height: 100, justifyContent: 'center' }}>
+            {isPlayerTurn ? (
+              phase === 'rolling' ? (
+                <motion.div 
+                  animate={{ rotate: 360, scale: [1, 1.2, 1] }} 
+                  transition={{ duration: 0.6, repeat: Infinity }}
+                  style={{ width: 60, height: 60, background: 'white', border: '2px solid var(--burned)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30 }}
+                >
+                  {lastRoll}
+                </motion.div>
+              ) : (
+                <button 
+                  className="round-btn" 
+                  style={{ width: 80, height: 80 }} 
+                  onClick={rollDice} 
+                  disabled={phase !== 'idle'}
+                >
+                  Бросок
+                </button>
+              )
+            ) : (
+              <div style={{ fontFamily: 'var(--font-typewriter)', color: 'var(--accent-burgundy)', fontWeight: 'bold', fontSize: 14, textAlign: 'center' }}>
+                Ход<br/>противника...
+              </div>
+            )}
           </div>
         </div>
       </div>

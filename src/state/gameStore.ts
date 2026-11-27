@@ -7,7 +7,7 @@ import { BATTLE_PASS_REWARDS } from '../data/battlePass';
 
 export interface FleetShip { id: string; templateId: string; maxHp: number; }
 export type Screen = 'loading' | 'main-menu' | 'business-prep' | 'business-battle' | 'battle-prep' | 'folding' | 'battle';
-export type OverlayId = 'profile' | 'documentation' | 'save-load' | 'feedback' | 'conversion' | 'settings' | 'visas-gallery' | 'rent-select' | 'my-visas' | 'market' | 'production' | 'templates-gallery' | 'folding-overlay' | 'battle-results' | 'business-results' | 'meta-rewards' | 'achievements' | 'level-map' | 'tutorial' | 'ending' | 'battle-pass';
+export type OverlayId = 'profile' | 'documentation' | 'save-load' | 'feedback' | 'conversion' | 'settings' | 'visas-gallery' | 'rent-select' | 'my-visas' | 'market' | 'production' | 'templates-gallery' | 'folding-overlay' | 'battle-results' | 'business-results' | 'meta-rewards' | 'achievements' | 'level-map' | 'tutorial' | 'ending' | 'battle-pass' | 'rating';
 
 export interface PlayerSettings { musicVolume: number; sfxVolume: number; animations: boolean; uiScale: number; }
 
@@ -34,6 +34,8 @@ export interface PlayerState {
   bpLevel: number;
   bpClaimedLevels: number[];
   tokenSkin: 'default' | 'silver' | 'gold';
+
+  totalQuestsCompleted: number;
 }
 
 export interface GameState {
@@ -65,6 +67,7 @@ const DEFAULT_PLAYER: PlayerState = {
   dailyQuests: [], questProgress: {}, questsClaimed: [], lastQuestDate: '',
   tutorialCompleted: false, endings: [], activeEnding: null,
   pinballPockets: 0, bpLevel: 0, bpClaimedLevels: [], tokenSkin: 'default',
+  totalQuestsCompleted: 0,
 };
 
 const STORAGE_KEY = 'ftb-save-v1';
@@ -318,7 +321,7 @@ export const useGameStore = create<GameState>((set, get) => ({
          alertMsg += `\n\n⚔️ Баттл-пасс повышен до уровня ${newBpLevel}!`;
      }
 
-     const player = { ...p, coins: newCoins, questsClaimed: newClaimed, bpLevel: newBpLevel };
+     const player = { ...p, coins: newCoins, questsClaimed: newClaimed, bpLevel: newBpLevel, totalQuestsCompleted: p.totalQuestsCompleted + 1 };
      set({ player }); saveToStorage(player);
      alert(alertMsg);
   },

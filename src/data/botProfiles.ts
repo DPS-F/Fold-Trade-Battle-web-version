@@ -50,20 +50,26 @@ export const BOT_PROFILES: Record<Archetype, Omit<BotProfile, 'difficulty'>> = {
   },
 };
 
-export const DIFFICULTY_MODIFIERS: Record<Difficulty, { mistakeChance: number; thresholdOffset: number }> = {
-  easy: { mistakeChance: 0.30, thresholdOffset: -0.05 },
-  medium: { mistakeChance: 0.15, thresholdOffset: 0.0 },
-  hard: { mistakeChance: 0.05, thresholdOffset: 0.05 },
-  expert: { mistakeChance: 0.02, thresholdOffset: 0.1 },
+export const DIFFICULTY_MODIFIERS: Record<Difficulty, { mistakeChance: number }> = {
+  easy: { mistakeChance: 0.30 },
+  medium: { mistakeChance: 0.15 },
+  hard: { mistakeChance: 0.05 },
+  expert: { mistakeChance: 0.02 },
 };
 
 export function getBotProfile(archetype: Archetype, difficulty: Difficulty): BotProfile {
   const base = BOT_PROFILES[archetype];
   const diff = DIFFICULTY_MODIFIERS[difficulty];
+  
+  // Пороги из GDD
+  let buyThreshold = 1.0; // Easy
+  if (difficulty === 'medium') buyThreshold = 1.2;
+  if (difficulty === 'hard' || difficulty === 'expert') buyThreshold = 1.3;
+
   return {
     ...base,
     difficulty,
-    mistakeChance: base.mistakeChance * (diff.mistakeChance / 0.15), // Масштабируем шанс ошибки
-    buyThreshold: base.buyThreshold + diff.thresholdOffset,
+    mistakeChance: base.mistakeChance * (diff.mistakeChance / 0.15), 
+    buyThreshold: buyThreshold,
   };
 }

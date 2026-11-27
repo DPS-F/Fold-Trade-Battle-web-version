@@ -149,22 +149,50 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
 
         const storageLots: Lot[] = [];
         criticalGoods.forEach(g => {
-            storageLots.push({ id: `storage_crit_${g}`, sellerId: 'storage', goodId: g, amount: 2, price: GOODS[g].basePrice, isCritical: true });
+            // Критичные товары по 100% от базы, умножаем на 2 (кол-во в лоте)
+            storageLots.push({ id: `storage_crit_${g}`, sellerId: 'storage', goodId: g, amount: 2, price: Math.ceil(GOODS[g].basePrice * 2), isCritical: true });
         });
         
         const freeSlots = Math.max(3, Math.min(6, allReqs.length)) - storageLots.length;
         const normalGoods = [...new Set(allReqs)].filter(g => !criticalGoods.includes(g));
         for(let i=0; i<freeSlots; i++) {
             const g = normalGoods[Math.floor(Math.random() * normalGoods.length)];
-            if(g) storageLots.push({ id: `storage_norm_${i}`, sellerId: 'storage', goodId: g, amount: 2, price: Math.ceil(GOODS[g].basePrice * 1.5), isCritical: false });
+            if(g) storageLots.push({ id: `storage_norm_${i}`, sellerId: 'storage', goodId: g, amount: 2, price: Math.ceil(GOODS[g].basePrice * 1.5 * 2), isCritical: false });
         }
         set({ storage: storageLots });
     }
 
     const current = state.players[state.turnIndex];
-    
-    // 2. ЛОГИКА БОТА (Вызывается ДО проверки клетки!)
+    const cell: CellType = BOARD[current.position];
+
+    // 2. ЛОГИКА БОТА
     if (current.isBot) {
+        // Обработка штрафа для бота
+        if (cell === 'penalty') {
+            let totalPenalty = 0;
+            Object.entries(current.inventory).forEach(([goodId, amount]) => {
+              if (amount > 0) totalPenalty += Math.floor(GOODS[goodId].basePrice * 0.25 * amount);
+            });
+            if (current.scraps >= totalPenalty) current.scraps -= totalPenalty;
+            else { current.scraps = 0; current.inventory = {}; }
+            get().addLog(`${current.name} попал на штраф. Заплатил ${totalPenalty} или потерял товар.`);
+            set({ players: [...state.players], phase: 'idle' });
+            setTimeout(() => get().endTurn(), 1000);
+            return;
+        }
+
+        // Назначение роли для бота на рынке
+        if (cell === 'market') {
+            let newRole: 'buyer' | 'seller' = Math.random() > 0.5 ? 'buyer' : 'seller';
+            const hist = current.roleHistory;
+            if (hist.length >= 2 && hist[hist.length - 1] === newRole && hist[hist.length - 2] === newRole) newRole = newRole === 'buyer' ? 'seller' : 'buyer';
+            current.role = newRole; 
+            current.roleHistory = [...hist, newRole].slice(-3);
+            get().addLog(`${current.name} попал на рынок. Роль: ${newRole === 'buyer' ? 'Покупатель' : 'Продавец'}`);
+        } else {
+            current.role = null;
+        }
+
         const memory = state.botMemory[current.id] || { grudge: {}, delayedCloseCount: 0 };
         const action = decideBotAction(state, current, memory);
         
@@ -215,12 +243,10 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
 
         set({ players: newPlayers, phase: 'idle' });
         setTimeout(() => get().endTurn(), delay); 
-        return; // ВАЖНО: Выходим, чтобы не выполнять логику клеток для бота!
+        return; // Выходим, чтобы не выполнять логику клеток для бота!
     }
 
     // 3. ЛОГИКА ИГРОКА (если current.isBot === false)
-    const cell: CellType = BOARD[current.position];
-
     if (cell === 'start') {
       set({ players: [...state.players], phase: 'idle' }); get().endTurn();
     } else if (cell === 'walk') {
@@ -327,10 +353,8 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     
     player.scraps += 100;
     if (player.id === 'player') {
-        // Убрали выдачу куска визитки отсюда (куски даются только за бой и квесты)
-        alert(`Визитка закрыта! Вы получили 100 обрезков.`);
-        useGameStore.getState().unlockAchievement('close_visa');
-        useGameStore.getState().progressQuest('close_visas', 1);
+        useGameStore.getState().addVisaPiece(visaId, 1);
+        alert(`Визитка закрыта! Вы получили 100 обрезков и кусок визитки.`);
     }
 
     set({ players: [...state.players] });
